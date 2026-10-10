@@ -1,0 +1,523 @@
+<title>RPC 路由器体检报告</title>
+<meta name="description" content="cryptostack RPC 路由器 136 条链的分类、可用性、延迟与缓存体检">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+  /* Layout: single editorial column of telemetry cards; mono kickers + figures, system-sans body */
+  :root{
+    color-scheme: light;
+    --bg:#f4f3ef; --surface:#ffffff; --surface-2:#f6f5f1; --raise:#fbfbf9;
+    --fg:#0b0b0b; --fg-2:#52514e; --muted:#898781;
+    --grid:#e4e3dc; --border:rgba(11,11,11,.11); --border-strong:rgba(11,11,11,.18);
+    --accent:#2a78d6; --s-blue:#2a78d6; --s-orange:#eb6834; --s-aqua:#1baf7a;
+    --good:#0ca30c; --warn:#d98b00; --crit:#d03b3b;
+    --good-ink:#0a7a0a; --warn-ink:#a06500; --crit-ink:#c0302f;
+    --tierA:#184f95; --tierB:#3987e5; --tierC:#9ec5f4;
+    --shadow:0 1px 2px rgba(11,11,11,.05),0 1px 0 rgba(11,11,11,.03);
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#0c0c0c; --surface:#191918; --surface-2:#211f1e; --raise:#201e1d;
+    --fg:#f0efec; --fg-2:#c3c2b7; --muted:#8f8d86;
+    --grid:#2c2c2a; --border:rgba(255,255,255,.11); --border-strong:rgba(255,255,255,.2);
+    --accent:#3987e5; --s-blue:#3987e5; --s-orange:#e2703f; --s-aqua:#2bb98a;
+    --good:#0ca30c; --warn:#fab219; --crit:#e05a5a;
+    --good-ink:#2fb82f; --warn-ink:#f0b53a; --crit-ink:#e86a6a;
+    --tierA:#9ec5f4; --tierB:#3987e5; --tierC:#1c5cab;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }}
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --bg:#0c0c0c; --surface:#191918; --surface-2:#211f1e; --raise:#201e1d;
+    --fg:#f0efec; --fg-2:#c3c2b7; --muted:#8f8d86;
+    --grid:#2c2c2a; --border:rgba(255,255,255,.11); --border-strong:rgba(255,255,255,.2);
+    --accent:#3987e5; --s-blue:#3987e5; --s-orange:#e2703f; --s-aqua:#2bb98a;
+    --good:#0ca30c; --warn:#fab219; --crit:#e05a5a;
+    --good-ink:#2fb82f; --warn-ink:#f0b53a; --crit-ink:#e86a6a;
+    --tierA:#9ec5f4; --tierB:#3987e5; --tierC:#1c5cab;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.5;
+       -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1060px;margin:0 auto;padding-inline:20px;padding-block:0 72px;}
+  .tnum{font-variant-numeric:tabular-nums}
+
+  /* masthead */
+  header.mast{padding-block:40px 24px;border-bottom:1px solid var(--border-strong);margin-bottom:28px;}
+  .kick{font-family:var(--mono);font-weight:500;font-size:12px;letter-spacing:.14em;
+        text-transform:uppercase;color:var(--muted);}
+  h1{font-family:var(--mono);font-weight:700;font-size:clamp(26px,5vw,40px);line-height:1.08;
+     margin:.3em 0 .35em;text-wrap:balance;letter-spacing:-.01em;}
+  .sub{color:var(--fg-2);font-size:15px;max-width:60ch;}
+  .metaline{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:16px;font-family:var(--mono);
+            font-size:12.5px;color:var(--fg-2);}
+  .metaline b{color:var(--fg);font-weight:700}
+  .metaline a{color:var(--accent);text-decoration:none}
+
+  /* KPI tiles */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:34px;}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:16px 16px 14px;
+       box-shadow:var(--shadow);min-width:0;}
+  .kpi .lab{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+  .kpi .val{font-size:clamp(26px,4vw,34px);font-weight:700;line-height:1.05;margin-top:7px;letter-spacing:-.02em;}
+  .kpi .val small{font-size:.5em;font-weight:600;color:var(--fg-2);margin-left:2px}
+  .kpi .note{font-size:12px;color:var(--fg-2);margin-top:4px}
+  .kpi.good .val{color:var(--good-ink)}
+
+  section{margin-bottom:34px;}
+  .sechead{display:flex;align-items:baseline;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+  h2{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+     color:var(--accent);margin:0;}
+  .secsub{color:var(--fg-2);font-size:13.5px;margin:2px 0 18px;max-width:72ch}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:20px 22px;
+        box-shadow:var(--shadow);}
+
+  /* tiers bar */
+  .tierbar{display:flex;height:34px;border-radius:7px;overflow:hidden;border:1px solid var(--border);}
+  .tierseg{display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--mono);
+           font-weight:700;font-size:13px;min-width:0;}
+  .tierlegend{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:14px;font-size:13px;color:var(--fg-2)}
+  .tierlegend .dot{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+  .tagrow{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+  .tag{font-size:12.5px;padding:5px 11px;border-radius:999px;border:1px solid var(--border);
+       background:var(--surface-2);color:var(--fg-2)}
+  .tag b{color:var(--fg)}
+
+  /* generic horizontal bar rows */
+  .bars{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .barrow{display:grid;grid-template-columns:168px 1fr;gap:12px;align-items:center}
+  .barrow .name{font-size:13px;color:var(--fg-2);text-align:right;min-width:0;overflow:hidden;
+                text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .track{position:relative;height:22px;background:var(--surface-2);border-radius:5px;overflow:hidden}
+  .fill{height:100%;border-radius:5px;display:flex;align-items:center}
+  .fill .vlab{font-family:var(--mono);font-size:11.5px;font-weight:700;color:#fff;padding:0 8px;white-space:nowrap}
+  .vlab.out{color:var(--fg);position:absolute;left:100%;padding-left:8px}
+
+  /* cache cold->warm rows */
+  .crow{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center}
+  .crow .cn{font-size:13px;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .crow .cn small{color:var(--muted);font-family:var(--mono);font-size:11px;margin-left:5px}
+  .cbarwrap{position:relative;height:24px;background:var(--surface-2);border-radius:5px}
+  .cbar{position:absolute;left:0;top:0;height:100%;border-radius:5px;background:var(--s-orange)}
+  .cann{position:absolute;top:0;height:100%;display:flex;align-items:center;gap:8px;
+        font-family:var(--mono);font-size:11.5px;white-space:nowrap;padding-left:9px}
+  .cann .cold{color:#fff;font-weight:700}
+  .cann.dark{color:var(--fg)}
+  .cann .sx{color:var(--s-aqua);font-weight:700}
+  .cann .warm{color:var(--fg-2)}
+
+  /* tables */
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{padding:9px 13px;text-align:left;white-space:nowrap}
+  thead th{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;
+           color:var(--muted);border-bottom:1px solid var(--border-strong);position:sticky;top:0;
+           background:var(--surface);cursor:pointer;user-select:none}
+  thead th.sorted::after{content:" ▾";color:var(--accent)}
+  thead th.asc.sorted::after{content:" ▴"}
+  tbody tr{border-top:1px solid var(--grid)}
+  tbody tr:hover{background:var(--surface-2)}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12px}
+  .pill{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:.03em}
+  .pill.A{background:color-mix(in srgb,var(--tierA) 22%,transparent);color:var(--tierA)}
+  .pill.B{background:color-mix(in srgb,var(--tierB) 20%,transparent);color:var(--tierB)}
+  .pill.C{background:color-mix(in srgb,var(--s-blue) 14%,transparent);color:var(--fg-2)}
+  .warnbadge{color:var(--warn-ink);font-size:11px;font-family:var(--mono)}
+  .dotok{color:var(--good-ink)} .dotsp{color:var(--warn-ink);font-size:11px;font-family:var(--mono)}
+
+  /* failures */
+  .failgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .failcard{border:1px solid var(--border);border-radius:9px;padding:14px 16px;background:var(--surface-2)}
+  .failcard h3{margin:0 0 4px;font-size:13.5px;font-family:var(--mono);font-weight:700}
+  .failcard.exh h3{color:var(--crit-ink)} .failcard.uns h3{color:var(--warn-ink)}
+  .failcard ul{margin:8px 0 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:7px}
+  .failcard li{font-size:12.5px;color:var(--fg-2);line-height:1.4}
+  .failcard li b{color:var(--fg);font-family:var(--mono);font-weight:700;font-size:12px}
+  .failcard .m{display:block;color:var(--muted);font-size:11.5px;font-family:var(--mono);margin-top:1px}
+
+  /* controls */
+  .ctrls{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;align-items:center}
+  .ctrls input,.ctrls select{font:inherit;font-size:13px;padding:7px 11px;border:1px solid var(--border-strong);
+       border-radius:7px;background:var(--surface);color:var(--fg)}
+  .ctrls input{min-width:180px;flex:1 1 180px;max-width:280px}
+  .ctrls .count{font-family:var(--mono);font-size:12px;color:var(--muted);margin-left:auto}
+
+  /* methodology */
+  pre{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:14px 16px;
+      overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.6;color:var(--fg)}
+  .mlist{display:grid;gap:10px;margin-top:4px}
+  .mlist .mi{display:grid;grid-template-columns:150px 1fr;gap:14px;font-size:13.5px;align-items:baseline}
+  .mlist .mi .k{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700}
+  .mlist .mi .v{color:var(--fg-2)}
+  .mlist .mi code{font-family:var(--mono);font-size:12px;background:var(--surface-2);padding:1px 6px;border-radius:4px}
+
+  footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--border);
+         font-size:12.5px;color:var(--muted);font-family:var(--mono);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+
+  /* tooltip */
+  #tip{position:fixed;pointer-events:none;z-index:50;background:var(--fg);color:var(--bg);
+       font-family:var(--mono);font-size:12px;padding:7px 10px;border-radius:7px;opacity:0;
+       transition:opacity .08s;max-width:260px;box-shadow:0 4px 14px rgba(0,0,0,.25);line-height:1.45}
+  #tip b{font-weight:700}
+
+  .legend-inline{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--fg-2);margin-bottom:14px}
+  .legend-inline .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+  @media (max-width:720px){
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    .failgrid{grid-template-columns:1fr}
+    .barrow{grid-template-columns:120px 1fr}
+    .crow{grid-template-columns:116px 1fr}
+    .barrow .name{font-size:12px}
+    .mlist .mi{grid-template-columns:1fr}
+    .card{padding:16px 15px}
+  }
+</style>
+
+<div class="wrap">
+  <header class="mast">
+    <div class="kick">多链 RPC 体检 · Latency &amp; Availability</div>
+    <h1>RPC 路由器体检报告</h1>
+    <p class="sub">对 <b>cryptostack RPC 路由器</b>在服务中的全部 EVM 链做了一轮分类、可用性、延迟与缓存压测。核心结论:路由器热路径快而稳,差异几乎全部来自上游节点质量,而缓存把最差的上游从数秒级拉回毫秒级。</p>
+    <div class="metaline" id="metaline"></div>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+
+  <section>
+    <div class="sechead"><h2>01 · 链分类</h2></div>
+    <p class="secsub">按活跃节点冗余度分三层。冗余越低,单点故障风险越高——C 层尤其是只有 1 个活跃节点的链,可用性最脆弱。</p>
+    <div class="card">
+      <div class="tierbar" id="tierbar"></div>
+      <div class="tierlegend" id="tierlegend"></div>
+      <div class="tagrow" id="tiertags"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>02 · 可用性(按方法)</h2></div>
+    <p class="secsub">每个方法在 136 条链上各采样 3 次,共 3672 次调用。简单方法(元数据)全部满额,整体可用性 <b id="availhl"></b>。仅 5 处失败,全部是上游行为,下方分类列出。</p>
+    <div class="card">
+      <div class="legend-inline">
+        <span><span class="sw" style="background:var(--s-blue)"></span>简单方法</span>
+        <span><span class="sw" style="background:var(--s-orange)"></span>复杂方法</span>
+      </div>
+      <div class="bars" id="availbars"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>03 · 失败归因</h2></div>
+    <p class="secsub">没有一处失败来自路由器本身。两类成因:上游节点不支持该方法(含 Tron 非 EVM nonce 模型),以及上游节点池瞬时耗尽/限流。</p>
+    <div class="failgrid" id="failgrid"></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>04 · 热路径延迟</h2></div>
+    <p class="secsub">缓存命中后的端到端延迟,全部 136 条链聚合。p50 ≈ 28ms、p95 ≈ 35ms,跨链高度一致——命中缓存后,是哪条链几乎不影响体验。</p>
+    <div class="card">
+      <div class="legend-inline">
+        <span><span class="sw" style="background:var(--s-blue)"></span>p50(中位)</span>
+        <span><span class="sw" style="background:var(--grid);border:1px solid var(--border-strong)"></span>p50→p95 区间</span>
+      </div>
+      <div class="bars" id="latbars"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>05 · 缓存价值</h2></div>
+    <p class="secsub">用随机历史区块做冷/热对比:第一次冷回源 vs 后续命中缓存。中位加速 <b id="spdhl"></b>,<b id="benhl"></b> 条链受益。上游越慢,缓存救得越多——下面是加速最猛的 12 条链(橙条=冷回源耗时,右侧标注缓存后的热延迟与倍数)。</p>
+    <div class="card">
+      <div class="bars" id="cachebars" style="gap:10px"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>06 · 需关注:上游抖动</h2></div>
+    <p class="secsub">热路径稳定,但冷回源的抖动(eth_blockNumber 多次采样的标准差)暴露了上游池不稳的链——这些是加节点或替换上游的候选。</p>
+    <div class="tablewrap">
+      <table id="jittertable"><thead><tr>
+        <th>链</th><th class="num">chainId</th><th class="num">抖动 ms</th><th class="num">热 p50 ms</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>07 · 全部链明细</h2></div>
+    <p class="secsub">136 条链全量。点表头排序;按名称/chainId 搜索;按分层筛选。avail=各方法平均成功率,warm=热 p50,cold=冷回源,speedup=缓存加速。</p>
+    <div class="ctrls">
+      <input id="q" type="text" placeholder="搜索链名 / chainId…" aria-label="搜索">
+      <select id="tierf" aria-label="按分层筛选">
+        <option value="">全部分层</option>
+        <option value="A-high">A 高冗余</option>
+        <option value="B-medium">B 中</option>
+        <option value="C-low">C 低/单点</option>
+      </select>
+      <label style="font-size:13px;color:var(--fg-2)"><input type="checkbox" id="spf"> 仅单点</label>
+      <span class="count" id="rowcount"></span>
+    </div>
+    <div class="tablewrap" style="max-height:520px;overflow-y:auto">
+      <table id="alltable"><thead><tr>
+        <th data-k="name">链</th>
+        <th data-k="chainId" class="num">chainId</th>
+        <th data-k="tier">层</th>
+        <th data-k="active" class="num">活跃节点</th>
+        <th data-k="avail" class="num">avail %</th>
+        <th data-k="warm" class="num">warm ms</th>
+        <th data-k="cold" class="num">cold ms</th>
+        <th data-k="speedup" class="num">缓存×</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>08 · 方法与复现</h2></div>
+    <div class="card">
+      <div class="mlist">
+        <div class="mi"><span class="k">采样入口</span><span class="v">所有请求经路由器 <code>POST /rpc/{chainId}</code> 转发;链目录取自 <code>/api/public/chains?limit=500</code>。</span></div>
+        <div class="mi"><span class="k">简单方法</span><span class="v">eth_chainId · eth_blockNumber · net_version · eth_gasPrice · web3_clientVersion</span></div>
+        <div class="mi"><span class="k">复杂方法</span><span class="v">eth_getBlockByNumber(latest,true) · eth_getBalance · eth_getTransactionCount · eth_getLogs(latest)</span></div>
+        <div class="mi"><span class="k">可用性</span><span class="v">成功 = HTTP 200 且 JSON-RPC 含 result、无 error;eth_chainId 额外做正确性校验。</span></div>
+        <div class="mi"><span class="k">缓存冷/热</span><span class="v">每链取一个随机历史区块 → 同一请求连打 6 次;第 1 次为冷(回源),其余取中位为热(命中)。</span></div>
+        <div class="mi"><span class="k">复现</span><span class="v">三个脚本:分类、可用性/延迟压测、稳定延迟+缓存对比。</span></div>
+      </div>
+      <pre>python3 classify_chains.py                                   # 分层 → chains_classified.csv
+python3 rpc_bench.py     --chains all --methods all --samples 3   # 可用性 + 延迟
+python3 latency_cache.py --chains all --samples 12 --cache-reps 5 # 稳定延迟 + 缓存冷/热</pre>
+    </div>
+  </section>
+
+  <footer>
+    <span id="foot-target"></span>
+    <span>共 <span id="foot-calls"></span> 次调用 · 采集于 <span id="foot-date"></span></span>
+  </footer>
+</div>
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script id="data" type="application/json">{"meta": {"target": "rpc.cryptostack.ai", "date": "2026-10-10", "n_chains": 136, "total_calls": 3672, "overall_avail": 99.7, "catalog": 2974, "endpoints_active": 578}, "tiers": [{"tier": "A-high", "label": "A 高冗余 (≥10)", "count": 8}, {"tier": "B-medium", "label": "B 中 (4–9)", "count": 54}, {"tier": "C-low", "label": "C 低/单点 (≤3)", "count": 74}], "single_point": 15, "traffic_count": 10, "methods_avail": [{"name": "eth_chainId", "type": "simple", "sr": 100.0, "ok": 408, "total": 408}, {"name": "eth_blockNumber", "type": "simple", "sr": 100.0, "ok": 408, "total": 408}, {"name": "net_version", "type": "simple", "sr": 99.8, "ok": 407, "total": 408}, {"name": "eth_gasPrice", "type": "simple", "sr": 100.0, "ok": 408, "total": 408}, {"name": "web3_clientVersion", "type": "simple", "sr": 100.0, "ok": 408, "total": 408}, {"name": "eth_getBalance", "type": "complex", "sr": 100.0, "ok": 408, "total": 408}, {"name": "eth_getBlockByNumber", "type": "complex", "sr": 100.0, "ok": 408, "total": 408}, {"name": "eth_getTransactionCount", "type": "complex", "sr": 99.3, "ok": 405, "total": 408}, {"name": "eth_getLogs", "type": "complex", "sr": 98.3, "ok": 401, "total": 408}], "methods_latency": [{"name": "eth_chainId", "p50": 28, "p95": 35}, {"name": "eth_blockNumber", "p50": 28, "p95": 36}, {"name": "eth_gasPrice", "p50": 29, "p95": 35}, {"name": "eth_getBalance", "p50": 29, "p95": 36}, {"name": "eth_getBlockByNumber", "p50": 29, "p95": 36}], "cache_top": [{"chainId": 520, "name": "XT Smart Chain Mainnet", "cold": 7200, "warm": 23, "speedup": 311.1}, {"chainId": 1285, "name": "Moonriver", "cold": 6208, "warm": 24, "speedup": 258.1}, {"chainId": 1287, "name": "Moonbase Alpha", "cold": 5751, "warm": 23, "speedup": 245.7}, {"chainId": 1284, "name": "Moonbeam", "cold": 3205, "warm": 24, "speedup": 133.8}, {"chainId": 1100, "name": "Dymension", "cold": 1652, "warm": 25, "speedup": 67.2}, {"chainId": 592, "name": "Astar", "cold": 1617, "warm": 25, "speedup": 64.0}, {"chainId": 3338, "name": "peaq", "cold": 1827, "warm": 30, "speedup": 61.1}, {"chainId": 686, "name": "Karura Network", "cold": 1293, "warm": 22, "speedup": 57.8}, {"chainId": 78281, "name": "Dragonfly Mainnet (Hexapod)", "cold": 794, "warm": 23, "speedup": 35.2}, {"chainId": 138, "name": "Defi Oracle Meta Mainnet", "cold": 858, "warm": 26, "speedup": 32.4}, {"chainId": 787, "name": "Acala Network", "cold": 821, "warm": 26, "speedup": 32.1}, {"chainId": 766, "name": "QL1", "cold": 740, "warm": 23, "speedup": 31.8}], "cache_summary": {"cold_p50": 279, "warm_p50": 25, "speedup_med": 10.4, "benefit": 128, "n": 129}, "jitter_top": [{"chainId": 10, "name": "OP Mainnet", "jitter": 1443, "p50": 32}, {"chainId": 1514, "name": "Data Network", "jitter": 489, "p50": 27}, {"chainId": 42, "name": "LUKSO Mainnet", "jitter": 460, "p50": 31}, {"chainId": 1135, "name": "Lisk", "jitter": 359, "p50": 28}, {"chainId": 766, "name": "QL1", "jitter": 324, "p50": 30}, {"chainId": 199, "name": "BitTorrent Chain Mainnet", "jitter": 317, "p50": 25}, {"chainId": 20, "name": "Elastos Smart Chain", "jitter": 309, "p50": 27}, {"chainId": 8, "name": "c8ntinuum", "jitter": 283, "p50": 29}, {"chainId": 274, "name": "LaChain", "jitter": 278, "p50": 33}, {"chainId": 369, "name": "PulseChain", "jitter": 237, "p50": 27}], "failures": [{"chainId": 56, "name": "BNB Smart Chain Mainnet", "method": "eth_getLogs", "ok": 2, "total": 3, "cause": "上游节点耗尽/限流", "msg": "rpcrouter: all upstream endpoints exhausted for chain 56"}, {"chainId": 42161, "name": "Arbitrum One", "method": "net_version", "ok": 2, "total": 3, "cause": "上游不支持该方法", "msg": "the method net_version does not exist/is not available"}, {"chainId": 30, "name": "Rootstock Mainnet", "method": "eth_getLogs", "ok": 0, "total": 3, "cause": "上游不支持该方法", "msg": "the method eth_getLogs does not exist/is not available"}, {"chainId": 728126428, "name": "Tron Mainnet", "method": "eth_getTransactionCount", "ok": 0, "total": 3, "cause": "上游不支持该方法", "msg": "the method eth_getTransactionCount does not exist/is not available"}, {"chainId": 8822, "name": "IOTA EVM", "method": "eth_getLogs", "ok": 0, "total": 3, "cause": "上游节点耗尽/限流", "msg": "rpcrouter: all upstream endpoints exhausted for chain 8822"}], "traffic": [{"chainId": 4663, "name": "Robinhood Chain", "active": 2, "ingress": 10780}, {"chainId": 56, "name": "BNB Smart Chain Mainnet", "active": 28, "ingress": 36}, {"chainId": 1, "name": "Ethereum Mainnet", "active": 30, "ingress": 24}, {"chainId": 999, "name": "HyperEVM", "active": 5, "ingress": 19}, {"chainId": 57073, "name": "Ink", "active": 4, "ingress": 19}, {"chainId": 8453, "name": "Base", "active": 13, "ingress": 17}, {"chainId": 137, "name": "Polygon Mainnet", "active": 10, "ingress": 17}, {"chainId": 42161, "name": "Arbitrum One", "active": 8, "ingress": 17}, {"chainId": 5042, "name": "Arc", "active": 6, "ingress": 17}, {"chainId": 11155111, "name": "Ethereum Sepolia", "active": 9, "ingress": 4}], "all_chains": [{"chainId": 520, "name": "XT Smart Chain Mainnet", "sym": "XT", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": 7200, "speedup": 311.1}, {"chainId": 1285, "name": "Moonriver", "sym": "MOVR", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 22, "cold": 6208, "speedup": 258.1}, {"chainId": 1287, "name": "Moonbase Alpha", "sym": "DEV", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 5751, "speedup": 245.7}, {"chainId": 1284, "name": "Moonbeam", "sym": "GLMR", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 32, "cold": 3205, "speedup": 133.8}, {"chainId": 3338, "name": "peaq", "sym": "PEAQ", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 22, "cold": 1827, "speedup": 61.1}, {"chainId": 1100, "name": "Dymension", "sym": "DYM", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 25, "cold": 1652, "speedup": 67.2}, {"chainId": 592, "name": "Astar", "sym": "ASTR", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 1617, "speedup": 64.0}, {"chainId": 686, "name": "Karura Network", "sym": "KAR", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 29, "cold": 1293, "speedup": 57.8}, {"chainId": 138, "name": "Defi Oracle Meta Mainnet", "sym": "ETH", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 36, "cold": 858, "speedup": 32.4}, {"chainId": 787, "name": "Acala Network", "sym": "ACA", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 28, "cold": 821, "speedup": 32.1}, {"chainId": 78281, "name": "Dragonfly Mainnet (Hexapod)", "sym": "DFLY", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 27, "cold": 794, "speedup": 35.2}, {"chainId": 137, "name": "Polygon Mainnet", "sym": "POL", "tier": "A-high", "active": 10, "sp": false, "tr": true, "avail": 100.0, "warm": 28, "cold": 787, "speedup": 31.5}, {"chainId": 766, "name": "QL1", "sym": "QOM", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 740, "speedup": 31.8}, {"chainId": 20, "name": "Elastos Smart Chain", "sym": "ELA", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 27, "cold": 673, "speedup": 21.6}, {"chainId": 31612, "name": "Mezo", "sym": "BTC", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 32, "cold": 606, "speedup": 26.4}, {"chainId": 42262, "name": "Oasis Emerald", "sym": "ROSE", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 30, "cold": 604, "speedup": 25.2}, {"chainId": 1101, "name": "Polygon zkEVM", "sym": "ETH", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 32, "cold": 593, "speedup": 25.1}, {"chainId": 2440, "name": "Atleta Network", "sym": "ATLA", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 593, "speedup": 25.1}, {"chainId": 29, "name": "Genesis L1", "sym": "L1", "tier": "B-medium", "active": 7, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 580, "speedup": 23.0}, {"chainId": 42, "name": "LUKSO Mainnet", "sym": "LYX", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 31, "cold": 577, "speedup": 24.7}, {"chainId": 1666600001, "name": "Harmony Mainnet Shard 1", "sym": "ONE", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 24, "cold": 562, "speedup": 23.7}, {"chainId": 8880, "name": "Unique", "sym": "UNQ", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 27, "cold": 545, "speedup": 23.8}, {"chainId": 240241, "name": "Studio Blockchain Mainnet", "sym": "STO", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 23, "cold": 525, "speedup": 21.7}, {"chainId": 57, "name": "Syscoin Mainnet", "sym": "SYS", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 524, "speedup": 15.8}, {"chainId": 369, "name": "PulseChain", "sym": "PLS", "tier": "A-high", "active": 12, "sp": false, "tr": false, "avail": 100.0, "warm": 27, "cold": 508, "speedup": 21.3}, {"chainId": 50, "name": "XDC Network", "sym": "XDC", "tier": "B-medium", "active": 8, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 493, "speedup": 21.8}, {"chainId": 204, "name": "opBNB Mainnet", "sym": "BNB", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 28, "cold": 472, "speedup": 18.1}, {"chainId": 11235, "name": "Haqq Network", "sym": "ISLM", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": 471, "speedup": 19.5}, {"chainId": 61, "name": "Ethereum Classic", "sym": "ETC", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 464, "speedup": 16.4}, {"chainId": 295, "name": "Hedera Mainnet", "sym": "HBAR", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 25, "cold": 462, "speedup": 16.5}, {"chainId": 324, "name": "zkSync Mainnet", "sym": "ETH", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 37, "cold": 457, "speedup": 16.1}, {"chainId": 42161, "name": "Arbitrum One", "sym": "ETH", "tier": "B-medium", "active": 8, "sp": false, "tr": true, "avail": 96.3, "warm": 26, "cold": 443, "speedup": 19.5}, {"chainId": 3797, "name": "AlveyChain Mainnet", "sym": "ALV", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": 435, "speedup": 16.4}, {"chainId": 2999, "name": "BitYuan Mainnet", "sym": "BTY", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 31, "cold": 434, "speedup": 19.4}, {"chainId": 12306, "name": "Fibonacci Mainnet", "sym": "FIBO", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 28, "cold": 432, "speedup": 17.9}, {"chainId": 173, "name": "ENI Mainnet", "sym": "EGAS", "tier": "B-medium", "active": 6, "sp": false, "tr": false, "avail": 100.0, "warm": 28, "cold": 412, "speedup": 16.8}, {"chainId": 2632500, "name": "COTI", "sym": "COTI", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 28, "cold": 402, "speedup": 15.0}, {"chainId": 19, "name": "Songbird Canary-Network", "sym": "SGB", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 27, "cold": 387, "speedup": 13.4}, {"chainId": 20181205, "name": "quarkblockchain", "sym": "QKI", "tier": "A-high", "active": 10, "sp": false, "tr": false, "avail": 100.0, "warm": 27, "cold": 370, "speedup": 16.0}, {"chainId": 73790, "name": "NV-CHAIN", "sym": "NVC", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 34, "cold": 366, "speedup": 19.6}, {"chainId": 1135, "name": "Lisk", "sym": "ETH", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 28, "cold": 357, "speedup": 14.1}, {"chainId": 109, "name": "Shibarium", "sym": "BONE", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 33, "cold": 354, "speedup": 15.5}, {"chainId": 2741, "name": "Abstract", "sym": "ETH", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 28, "cold": 349, "speedup": 14.9}, {"chainId": 60808, "name": "BOB", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 348, "speedup": 13.5}, {"chainId": 463, "name": "Areum Mainnet", "sym": "AREA", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 18, "cold": 345, "speedup": 13.1}, {"chainId": 130, "name": "Unichain", "sym": "ETH", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 31, "cold": 329, "speedup": 16.6}, {"chainId": 56, "name": "BNB Smart Chain Mainnet", "sym": "BNB", "tier": "A-high", "active": 28, "sp": false, "tr": true, "avail": 96.3, "warm": 27, "cold": 324, "speedup": 9.7}, {"chainId": 274, "name": "LaChain", "sym": "LAC", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 33, "cold": 319, "speedup": 13.4}, {"chainId": 4663, "name": "Robinhood Chain", "sym": "ETH", "tier": "C-low", "active": 2, "sp": false, "tr": true, "avail": 100.0, "warm": 26, "cold": 314, "speedup": 7.7}, {"chainId": 1666600000, "name": "Harmony Mainnet Shard 0", "sym": "ONE", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 28, "cold": 308, "speedup": 13.3}, {"chainId": 2020, "name": "Ronin", "sym": "RON", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 32, "cold": 308, "speedup": 11.9}, {"chainId": 11155111, "name": "Ethereum Sepolia", "sym": "ETH", "tier": "B-medium", "active": 9, "sp": false, "tr": true, "avail": 100.0, "warm": 24, "cold": 304, "speedup": 11.2}, {"chainId": 10, "name": "OP Mainnet", "sym": "ETH", "tier": "A-high", "active": 12, "sp": false, "tr": false, "avail": 100.0, "warm": 32, "cold": 299, "speedup": 7.7}, {"chainId": 199, "name": "BitTorrent Chain Mainnet", "sym": "BTT", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 25, "cold": 298, "speedup": 12.1}, {"chainId": 46, "name": "Darwinia Network", "sym": "RING", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 28, "cold": 293, "speedup": 12.2}, {"chainId": 88888, "name": "Chiliz Chain", "sym": "CHZ", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 292, "speedup": 11.6}, {"chainId": 999, "name": "HyperEVM", "sym": "HYPE", "tier": "B-medium", "active": 5, "sp": false, "tr": true, "avail": 100.0, "warm": 27, "cold": 290, "speedup": 8.2}, {"chainId": 388, "name": "Cronos zkEVM Mainnet", "sym": "zkCRO", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 28, "cold": 290, "speedup": 11.3}, {"chainId": 252, "name": "Fraxtal", "sym": "FRAX", "tier": "B-medium", "active": 6, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 286, "speedup": 12.0}, {"chainId": 534352, "name": "Scroll", "sym": "ETH", "tier": "B-medium", "active": 7, "sp": false, "tr": false, "avail": 100.0, "warm": 28, "cold": 285, "speedup": 9.3}, {"chainId": 1088, "name": "Metis Andromeda Mainnet", "sym": "METIS", "tier": "B-medium", "active": 6, "sp": false, "tr": false, "avail": 100.0, "warm": 32, "cold": 282, "speedup": 11.1}, {"chainId": 7000, "name": "ZetaChain Mainnet", "sym": "ZETA", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 28, "cold": 282, "speedup": 11.9}, {"chainId": 254, "name": "Swan Chain Mainnet", "sym": "ETH", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 33, "cold": 280, "speedup": 12.3}, {"chainId": 106, "name": "Velas EVM Mainnet", "sym": "VLX", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 36, "cold": 280, "speedup": 13.1}, {"chainId": 13371, "name": "Immutable zkEVM", "sym": "IMX", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 32, "cold": 279, "speedup": 11.8}, {"chainId": 43114, "name": "Avalanche C-Chain", "sym": "AVAX", "tier": "B-medium", "active": 8, "sp": false, "tr": false, "avail": 100.0, "warm": 22, "cold": 276, "speedup": 10.1}, {"chainId": 8, "name": "c8ntinuum", "sym": "CTM", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 270, "speedup": 8.0}, {"chainId": 2340, "name": "Atleta Olympia", "sym": "ATLA", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 29, "cold": 270, "speedup": 9.7}, {"chainId": 232, "name": "Lens", "sym": "GHO", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 33, "cold": 260, "speedup": 10.4}, {"chainId": 988, "name": "Stable Mainnet", "sym": "USDT0", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 260, "speedup": 11.2}, {"chainId": 42220, "name": "Celo Mainnet", "sym": "CELO", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 23, "cold": 258, "speedup": 10.4}, {"chainId": 25, "name": "Cronos Mainnet", "sym": "CRO", "tier": "B-medium", "active": 6, "sp": false, "tr": false, "avail": 100.0, "warm": 24, "cold": 256, "speedup": 8.1}, {"chainId": 4689, "name": "IoTeX Network Mainnet", "sym": "IOTX", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 31, "cold": 254, "speedup": 10.2}, {"chainId": 570, "name": "Rollux Mainnet", "sym": "SYS", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 28, "cold": 252, "speedup": 12.4}, {"chainId": 34443, "name": "Mode", "sym": "ETH", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": 251, "speedup": 9.4}, {"chainId": 9745, "name": "Plasma Mainnet", "sym": "XPL", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 29, "cold": 251, "speedup": 11.0}, {"chainId": 288, "name": "Boba Network", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 250, "speedup": 10.7}, {"chainId": 728126428, "name": "Tron Mainnet", "sym": "TRX", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 88.9, "warm": 21, "cold": 247, "speedup": 10.0}, {"chainId": 57073, "name": "Ink", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "tr": true, "avail": 100.0, "warm": 30, "cold": 246, "speedup": 7.6}, {"chainId": 51, "name": "XDC Apothem Network", "sym": "TXDC", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 245, "speedup": 9.3}, {"chainId": 59144, "name": "Linea", "sym": "ETH", "tier": "B-medium", "active": 6, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 243, "speedup": 8.8}, {"chainId": 14, "name": "Flare Mainnet", "sym": "FLR", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 240, "speedup": 8.4}, {"chainId": 1868, "name": "Soneium", "sym": "ETH", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 31, "cold": 238, "speedup": 9.8}, {"chainId": 71111, "name": "GuapcoinX", "sym": "GuapX", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 31, "cold": 234, "speedup": 9.3}, {"chainId": 169, "name": "Manta Pacific Mainnet", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 233, "speedup": 9.8}, {"chainId": 223, "name": "B2 Mainnet", "sym": "BTC", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 231, "speedup": 9.0}, {"chainId": 10000, "name": "Smart Bitcoin Cash", "sym": "BCH", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 25, "cold": 231, "speedup": 9.6}, {"chainId": 1, "name": "Ethereum Mainnet", "sym": "ETH", "tier": "A-high", "active": 30, "sp": false, "tr": true, "avail": 100.0, "warm": 25, "cold": 227, "speedup": 7.2}, {"chainId": 747474, "name": "katana", "sym": "ETH", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 227, "speedup": 8.7}, {"chainId": 48900, "name": "Zircuit Mainnet", "sym": "ETH", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 226, "speedup": 8.9}, {"chainId": 1313161554, "name": "Aurora Mainnet", "sym": "ETH", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": 221, "speedup": 9.2}, {"chainId": 30, "name": "Rootstock Mainnet", "sym": "RBTC", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 88.9, "warm": 31, "cold": 219, "speedup": 7.4}, {"chainId": 40, "name": "Telos EVM Mainnet", "sym": "TLOS", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 29, "cold": 212, "speedup": 8.6}, {"chainId": 98866, "name": "Plume Mainnet", "sym": "PLUME", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 27, "cold": 211, "speedup": 8.3}, {"chainId": 42170, "name": "Arbitrum Nova", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": 210, "speedup": 8.7}, {"chainId": 7777777, "name": "Zora", "sym": "ETH", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 27, "cold": 206, "speedup": 8.3}, {"chainId": 250, "name": "Fantom Opera", "sym": "FTM", "tier": "B-medium", "active": 7, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 204, "speedup": 7.4}, {"chainId": 73115, "name": "ICB Network", "sym": "ICBX", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 203, "speedup": 8.8}, {"chainId": 1116, "name": "Core Blockchain Mainnet", "sym": "CORE", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": 200, "speedup": 8.4}, {"chainId": 24734, "name": "MintMe.com Coin", "sym": "MINTME", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 27, "cold": 198, "speedup": 7.7}, {"chainId": 122, "name": "Fuse Mainnet", "sym": "FUSE", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 196, "speedup": 6.5}, {"chainId": 5000, "name": "Mantle", "sym": "MNT", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 33, "cold": 195, "speedup": 8.2}, {"chainId": 4326, "name": "MegaETH", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 34, "cold": 192, "speedup": 6.8}, {"chainId": 955305, "name": "Eluvio Content Fabric", "sym": "ELV", "tier": "B-medium", "active": 6, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": 190, "speedup": 7.2}, {"chainId": 167000, "name": "Taiko", "sym": "ETH", "tier": "B-medium", "active": 8, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": 188, "speedup": 6.6}, {"chainId": 1089, "name": "Humans.ai Mainnet", "sym": "HEART", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 26, "cold": 188, "speedup": 7.8}, {"chainId": 480, "name": "World Chain", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 23, "cold": 187, "speedup": 7.0}, {"chainId": 75, "name": "Decimal Smart Chain Mainnet", "sym": "DEL", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 31, "cold": 183, "speedup": 8.5}, {"chainId": 239, "name": "TAC Mainnet", "sym": "TAC", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 28, "cold": 182, "speedup": 7.1}, {"chainId": 2222, "name": "Kava", "sym": "KAVA", "tier": "B-medium", "active": 6, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 181, "speedup": 8.2}, {"chainId": 8217, "name": "Kaia Mainnet", "sym": "KAIA", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 31, "cold": 179, "speedup": 7.3}, {"chainId": 143, "name": "Monad", "sym": "MON", "tier": "A-high", "active": 11, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": 168, "speedup": 6.4}, {"chainId": 2818, "name": "Morph", "sym": "ETH", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 25, "cold": 136, "speedup": 5.9}, {"chainId": 1514, "name": "Data Network", "sym": "DATA", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 27, "cold": 127, "speedup": 5.9}, {"chainId": 5042, "name": "Arc", "sym": "USDC", "tier": "B-medium", "active": 6, "sp": false, "tr": true, "avail": 100.0, "warm": 31, "cold": 125, "speedup": 5.3}, {"chainId": 6999, "name": "PolySmartChain", "sym": "PSC", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 28, "cold": 123, "speedup": 4.6}, {"chainId": 321, "name": "KCC Mainnet", "sym": "KCS", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 37, "cold": 123, "speedup": 5.8}, {"chainId": 81, "name": "Japan Open Chain Mainnet", "sym": "JOC", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 30, "cold": 103, "speedup": 5.5}, {"chainId": 81457, "name": "Blast", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 23, "cold": 97, "speedup": 4.0}, {"chainId": 813, "name": "Qitmeer Network Mainnet", "sym": "MEER", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 23, "cold": 95, "speedup": 3.7}, {"chainId": 66, "name": "OKXChain Mainnet", "sym": "OKT", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 29, "cold": 94, "speedup": 3.6}, {"chainId": 1009, "name": "Jumbochain Mainnet", "sym": "JNFTC", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": 93, "speedup": 4.2}, {"chainId": 200901, "name": "Bitlayer Mainnet", "sym": "BTC", "tier": "C-low", "active": 1, "sp": true, "tr": false, "avail": 100.0, "warm": 27, "cold": 76, "speedup": 2.6}, {"chainId": 196, "name": "X Layer Mainnet", "sym": "OKB", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 31, "cold": 71, "speedup": 3.2}, {"chainId": 1319, "name": "AIA Mainnet", "sym": "AIA", "tier": "B-medium", "active": 6, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": 47, "speedup": 2.0}, {"chainId": 222222, "name": "Hydration", "sym": "WETH", "tier": "C-low", "active": 3, "sp": false, "tr": false, "avail": 100.0, "warm": 25, "cold": 40, "speedup": 1.6}, {"chainId": 8822, "name": "IOTA EVM", "sym": "IOTA", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 88.9, "warm": 27, "cold": 38, "speedup": 1.6}, {"chainId": 4200, "name": "Merlin Mainnet", "sym": "BTC", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 35, "cold": 32, "speedup": 1.4}, {"chainId": 58, "name": "Ontology Mainnet", "sym": "ONG", "tier": "B-medium", "active": 4, "sp": false, "tr": false, "avail": 100.0, "warm": 33, "cold": 30, "speedup": 1.3}, {"chainId": 8453, "name": "Base", "sym": "ETH", "tier": "A-high", "active": 13, "sp": false, "tr": true, "avail": 100.0, "warm": 24, "cold": null, "speedup": null}, {"chainId": 100, "name": "Gnosis", "sym": "XDAI", "tier": "B-medium", "active": 8, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": null, "speedup": null}, {"chainId": 146, "name": "Sonic Mainnet", "sym": "S", "tier": "B-medium", "active": 8, "sp": false, "tr": false, "avail": 100.0, "warm": 35, "cold": null, "speedup": null}, {"chainId": 80094, "name": "Berachain", "sym": "BERA", "tier": "B-medium", "active": 8, "sp": false, "tr": false, "avail": 100.0, "warm": 17, "cold": null, "speedup": null}, {"chainId": 314, "name": "Filecoin - Mainnet", "sym": "FIL", "tier": "B-medium", "active": 5, "sp": false, "tr": false, "avail": 100.0, "warm": 29, "cold": null, "speedup": null}, {"chainId": 1329, "name": "Sei Network", "sym": "SEI", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 26, "cold": null, "speedup": null}, {"chainId": 2031, "name": "Centrifuge", "sym": "CFG", "tier": "C-low", "active": 2, "sp": false, "tr": false, "avail": 100.0, "warm": 25, "cold": null, "speedup": null}]}</script>
+<script>
+(function(){
+  "use strict";
+  var D = JSON.parse(document.getElementById('data').textContent);
+
+  // ---- tooltip ----
+  var tip = document.getElementById('tip');
+  function showTip(html, e){ tip.innerHTML = html; tip.style.opacity = 1; moveTip(e); }
+  function moveTip(e){
+    var x = e.clientX + 14, y = e.clientY + 16;
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    if (x + w > innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > innerHeight - 8) y = e.clientY - h - 16;
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function hideTip(){ tip.style.opacity = 0; }
+  function bindTip(el, html){
+    el.addEventListener('mouseenter', function(e){ showTip(html, e); });
+    el.addEventListener('mousemove', moveTip);
+    el.addEventListener('mouseleave', hideTip);
+  }
+  var esc = function(s){ return String(s).replace(/[&<>]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); };
+
+  // ---- metaline + KPIs ----
+  var m = D.meta;
+  document.getElementById('metaline').innerHTML =
+    '目标 <a href="https://'+m.target+'/" target="_blank" rel="noopener">'+m.target+'</a>'
+    + '<span>覆盖链 <b>'+m.n_chains+'</b> / 目录 <b class="tnum">'+m.catalog.toLocaleString()+'</b></span>'
+    + '<span>活跃上游节点 <b class="tnum">'+m.endpoints_active+'</b></span>'
+    + '<span>采集日期 <b>'+m.date+'</b></span>';
+  document.getElementById('availhl').textContent = m.overall_avail + '%';
+  document.getElementById('foot-target').textContent = m.target;
+  document.getElementById('foot-calls').textContent = m.total_calls.toLocaleString();
+  document.getElementById('foot-date').textContent = m.date;
+
+  var kpis = [
+    {lab:'整体可用性', val:m.overall_avail, unit:'%', note:m.total_calls.toLocaleString()+' 次调用', good:true},
+    {lab:'热路径 p50', val:'≈28', unit:'ms', note:'命中缓存,跨链一致'},
+    {lab:'缓存中位加速', val:D.cache_summary.speedup_med, unit:'×', note:D.cache_summary.benefit+'/'+D.cache_summary.n+' 条链受益'},
+    {lab:'覆盖链数', val:m.n_chains, unit:'', note:'目录共 '+m.catalog.toLocaleString()+' 条'}
+  ];
+  document.getElementById('kpis').innerHTML = kpis.map(function(k){
+    return '<div class="kpi'+(k.good?' good':'')+'"><div class="lab">'+k.lab+'</div>'
+      +'<div class="val tnum">'+k.val+(k.unit?'<small>'+k.unit+'</small>':'')+'</div>'
+      +'<div class="note">'+k.note+'</div></div>';
+  }).join('');
+
+  // ---- tiers ----
+  var tcol = {'A-high':'var(--tierA)','B-medium':'var(--tierB)','C-low':'var(--tierC)'};
+  var tink = {'A-high':'#fff','B-medium':'#fff','C-low':'#0b2749'};
+  var total = D.tiers.reduce(function(a,t){return a+t.count;},0);
+  document.getElementById('tierbar').innerHTML = D.tiers.map(function(t){
+    var pc = t.count/total*100;
+    return '<div class="tierseg" data-t="'+t.tier+'" style="flex:'+t.count+' '+t.count+' 0;background:'+tcol[t.tier]+';color:'+tink[t.tier]+'">'
+      + (pc>7? t.count : '') + '</div>';
+  }).join('');
+  Array.prototype.forEach.call(document.querySelectorAll('.tierseg'), function(el){
+    var t = D.tiers.filter(function(x){return x.tier===el.dataset.t;})[0];
+    bindTip(el, '<b>'+esc(t.label)+'</b><br>'+t.count+' 条链 · '+(t.count/total*100).toFixed(0)+'%');
+  });
+  document.getElementById('tierlegend').innerHTML = D.tiers.map(function(t){
+    return '<span><span class="dot" style="background:'+tcol[t.tier]+'"></span>'+esc(t.label)+' · <b class="tnum">'+t.count+'</b></span>';
+  }).join('');
+  document.getElementById('tiertags').innerHTML =
+    '<span class="tag">单点链(仅 1 活跃节点) <b class="tnum">'+D.single_point+'</b></span>'
+    + '<span class="tag">有真实流量 <b class="tnum">'+D.traffic_count+'</b></span>';
+
+  // ---- availability bars ----
+  (function(){
+    var box = document.getElementById('availbars');
+    box.innerHTML = D.methods_avail.map(function(a){
+      var col = a.type==='simple' ? 'var(--s-blue)' : 'var(--s-orange)';
+      var w = a.sr; // 0..100, nearly full
+      var inside = w > 18;
+      var lab = a.sr.toFixed(1)+'%';
+      return '<div class="barrow"><div class="name" title="'+a.name+'">'+a.name+'</div>'
+        + '<div class="track" data-m="'+a.name+'">'
+        + '<div class="fill" style="width:'+w+'%;background:'+col+'">'
+        + (inside?'<span class="vlab">'+lab+'</span>':'')+'</div>'
+        + (inside?'':'<span class="vlab out">'+lab+'</span>')
+        + '</div></div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.track'), function(el){
+      var a = D.methods_avail.filter(function(x){return x.name===el.dataset.m;})[0];
+      bindTip(el, '<b>'+esc(a.name)+'</b> ('+(a.type==='simple'?'简单':'复杂')+')<br>'
+        +'成功率 '+a.sr+'%<br>'+a.ok+' / '+a.total+' 次');
+    });
+  })();
+
+  // ---- failures ----
+  (function(){
+    var groups = {'上游节点耗尽/限流':[], '上游不支持该方法':[], '其他':[]};
+    D.failures.forEach(function(f){ (groups[f.cause]||groups['其他']).push(f); });
+    function card(title, cls, arr){
+      if (!arr.length) return '';
+      return '<div class="failcard '+cls+'"><h3>'+title+' · '+arr.length+'</h3><ul>'
+        + arr.map(function(f){
+            return '<li><b>'+esc(f.name)+'</b> <span class="tnum">('+f.chainId+')</span> — '
+              + f.method + ' <span class="tnum">'+f.ok+'/'+f.total+'</span>'
+              + '<span class="m">'+esc(f.msg)+'</span></li>';
+          }).join('')
+        + '</ul></div>';
+    }
+    document.getElementById('failgrid').innerHTML =
+      card('上游不支持该方法','uns',groups['上游不支持该方法'])
+      + card('上游节点耗尽 / 限流','exh',groups['上游节点耗尽/限流'])
+      + card('其他','uns',groups['其他']);
+  })();
+
+  // ---- latency bars (p50 with p50->p95 whisker) ----
+  (function(){
+    var box = document.getElementById('latbars');
+    var max = 0; D.methods_latency.forEach(function(l){ max = Math.max(max, l.p95); });
+    max = Math.ceil(max/10)*10 + 5;
+    box.innerHTML = D.methods_latency.map(function(l){
+      var w50 = l.p50/max*100, w95 = l.p95/max*100;
+      return '<div class="barrow"><div class="name" title="'+l.name+'">'+l.name+'</div>'
+        + '<div class="track" data-m="'+l.name+'">'
+        + '<div style="position:absolute;left:'+w50+'%;width:'+(w95-w50)+'%;height:100%;background:var(--grid)"></div>'
+        + '<div class="fill" style="width:'+w50+'%;background:var(--s-blue)"><span class="vlab">'+l.p50+'ms</span></div>'
+        + '<span class="vlab out" style="left:'+w95+'%">p95 '+l.p95+'</span>'
+        + '</div></div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.track'), function(el){
+      var l = D.methods_latency.filter(function(x){return x.name===el.dataset.m;})[0];
+      bindTip(el, '<b>'+esc(l.name)+'</b><br>p50 '+l.p50+'ms · p95 '+l.p95+'ms');
+    });
+  })();
+
+  // ---- cache cold->warm ----
+  (function(){
+    document.getElementById('spdhl').textContent = D.cache_summary.speedup_med + '×';
+    document.getElementById('benhl').textContent = D.cache_summary.benefit + '/' + D.cache_summary.n;
+    var box = document.getElementById('cachebars');
+    var max = 0; D.cache_top.forEach(function(c){ max = Math.max(max, c.cold); });
+    box.innerHTML = D.cache_top.map(function(c){
+      var w = Math.max(c.cold/max*100, 1);
+      var inside = w > 42;
+      var ann = '<span class="cold">'+c.cold.toLocaleString()+'ms</span>'
+        + '<span class="warm">→ 热 '+c.warm+'ms</span>'
+        + '<span class="sx">'+Math.round(c.speedup)+'×</span>';
+      return '<div class="crow"><div class="cn" title="'+esc(c.name)+'">'+esc(c.name)
+        + ' <small>'+c.chainId+'</small></div>'
+        + '<div class="cbarwrap" data-id="'+c.chainId+'">'
+        + '<div class="cbar" style="width:'+w+'%"></div>'
+        + '<div class="cann'+(inside?'':' dark')+'" style="'+(inside?'left:0':'left:'+w+'%')+'">'+ann+'</div>'
+        + '</div></div>';
+    }).join('');
+    Array.prototype.forEach.call(box.querySelectorAll('.cbarwrap'), function(el){
+      var c = D.cache_top.filter(function(x){return x.chainId==el.dataset.id;})[0];
+      bindTip(el, '<b>'+esc(c.name)+'</b> ('+c.chainId+')<br>冷回源 '+c.cold.toLocaleString()
+        +'ms → 热命中 '+c.warm+'ms<br>加速 <b>'+c.speedup+'×</b>');
+    });
+  })();
+
+  // ---- jitter table ----
+  (function(){
+    var tb = document.querySelector('#jittertable tbody');
+    tb.innerHTML = D.jitter_top.map(function(j){
+      return '<tr><td>'+esc(j.name)+'</td><td class="num">'+j.chainId+'</td>'
+        + '<td class="num" style="color:var(--warn-ink);font-weight:700">'+j.jitter+'</td>'
+        + '<td class="num">'+j.p50+'</td></tr>';
+    }).join('');
+  })();
+
+  // ---- all chains table (sort + filter) ----
+  (function(){
+    var rows = D.all_chains.slice();
+    var tbody = document.querySelector('#alltable tbody');
+    var sortK = 'cold', sortAsc = false;
+    var q = document.getElementById('q'), tierf = document.getElementById('tierf'),
+        spf = document.getElementById('spf'), rc = document.getElementById('rowcount');
+
+    function pill(t){ var c = t==='A-high'?'A':t==='B-medium'?'B':'C'; return '<span class="pill '+c+'">'+c+'</span>'; }
+    function fmt(v){ return v==null?'<span style="color:var(--muted)">—</span>':v; }
+
+    function render(){
+      var term = q.value.trim().toLowerCase(), tf = tierf.value, sp = spf.checked;
+      var list = rows.filter(function(r){
+        if (tf && r.tier!==tf) return false;
+        if (sp && !r.sp) return false;
+        if (term){ return (r.name.toLowerCase().indexOf(term)>=0) || (''+r.chainId).indexOf(term)>=0; }
+        return true;
+      });
+      list.sort(function(a,b){
+        var x=a[sortK], y=b[sortK];
+        if (x==null) x = sortAsc? Infinity : -Infinity;
+        if (y==null) y = sortAsc? Infinity : -Infinity;
+        if (typeof x==='string'){ return sortAsc? x.localeCompare(y): y.localeCompare(x); }
+        return sortAsc? x-y : y-x;
+      });
+      tbody.innerHTML = list.map(function(r){
+        return '<tr><td>'+esc(r.name)+(r.tr?' <span class="dotok" title="有流量">●</span>':'')+'</td>'
+          + '<td class="num">'+r.chainId+'</td>'
+          + '<td>'+pill(r.tier)+'</td>'
+          + '<td class="num">'+r.active+(r.sp?' <span class="dotsp" title="单点">▲</span>':'')+'</td>'
+          + '<td class="num">'+fmt(r.avail!=null?r.avail.toFixed(1):null)+'</td>'
+          + '<td class="num">'+fmt(r.warm)+'</td>'
+          + '<td class="num">'+fmt(r.cold!=null?r.cold.toLocaleString():null)+'</td>'
+          + '<td class="num" style="color:var(--s-aqua);font-weight:700">'+fmt(r.speedup!=null?r.speedup+'×':null)+'</td></tr>';
+      }).join('');
+      rc.textContent = list.length + ' / ' + rows.length + ' 条';
+      Array.prototype.forEach.call(document.querySelectorAll('#alltable thead th'), function(th){
+        th.classList.toggle('sorted', th.dataset.k===sortK);
+        th.classList.toggle('asc', th.dataset.k===sortK && sortAsc);
+      });
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('#alltable thead th'), function(th){
+      th.addEventListener('click', function(){
+        var k = th.dataset.k;
+        if (k===sortK){ sortAsc = !sortAsc; } else { sortK = k; sortAsc = (k==='name'); }
+        render();
+      });
+    });
+    q.addEventListener('input', render);
+    tierf.addEventListener('change', render);
+    spf.addEventListener('change', render);
+    render();
+  })();
+})();
+</script>

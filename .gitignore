@@ -1,0 +1,12 @@
+# reproducible run outputs (timestamped)
+results_*.json
+results_*.csv
+
+# scratch / stale
+full_run.log
+chains_raw.json
+report_stats.json
+
+# python
+__pycache__/
+*.pyc
