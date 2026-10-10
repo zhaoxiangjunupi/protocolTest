@@ -237,7 +237,7 @@ def chain_issues(c):
                 "——路由器遇到这个错误没有自动换上游重试" % (
                     kind_label(ca["cold_kind"]), ca["cold_fail_ms"], ca["cold_err"], ca["retry_call"], ca["retry_ms"]))
         else:
-            add("cache_all_fail", "warn", "缓存测试全部失败", "历史区块 #%s 连续 %d 次请求全部失败(%s：%s)" % (
+            add("cache_all_fail", "warn", "缓存测试全部失败", "区块 #%s 连续 %d 次请求全部失败(%s：%s)" % (
                 ca["block"], ca["reps"], kind_label(ca["cold_kind"]), ca["cold_err"]))
 
     # 6) slow upstream, jitter, single point
@@ -256,11 +256,18 @@ def chain_issues(c):
 
 def build_embed(chains, bench, lc, overview):
     bmeta = bench.get("meta", {})
-    ts = bmeta.get("ts") or lc.get("ts") or ""
-    try:
-        when = datetime.strptime(ts, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d %H:%M UTC")
-    except ValueError:
-        when = ts
+
+    def fmt_ts(ts):
+        try:
+            return datetime.strptime(ts, "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d %H:%M UTC")
+        except ValueError:
+            return ts
+
+    when = fmt_ts(bmeta.get("ts") or lc.get("ts") or "")
+    lc_when = fmt_ts(lc.get("ts") or "")
+    if lc_when and lc_when != when:
+        # the two scripts ran at different times: show both
+        when = "%s(延迟/缓存 %s)" % (when, lc_when[11:] if lc_when[:10] == when[:10] else lc_when)
 
     # ---- availability per method ----
     mids = list(chains[0]["methods"]) if chains else []

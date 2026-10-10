@@ -36,7 +36,7 @@ from datetime import datetime, timezone
 
 from rpcutil import (
     SIMPLE_METHODS, COMPLEX_METHODS, HISTORY_METHODS, ALL_METHODS, METHOD_GROUP,
-    rpc_call, pct, load_chains, history_params, classify_error, ERROR_KINDS,
+    rpc_call, pct, load_chains, history_params, live_head, classify_error, ERROR_KINDS,
 )
 
 MAJORS = {1, 56, 137, 8453, 42161, 10, 43114, 250, 100, 324, 59144, 534352, 5000, 81457}
@@ -60,17 +60,6 @@ def select_chains(items, spec, limit):
     if limit:
         chosen = chosen[:limit]
     return chosen
-
-
-def live_head(chain, timeout):
-    """Current head via eth_blockNumber; falls back to the catalog snapshot."""
-    r = rpc_call(chain["chainId"], {"method": "eth_blockNumber", "params": []}, timeout=timeout)
-    if r["ok"]:
-        try:
-            return int(r["result"], 16), "live"
-        except (ValueError, TypeError):
-            pass
-    return (chain.get("head") or 0), "snapshot"
 
 
 def bench_chain(chain, methods, samples, timeout, seed):

@@ -77,6 +77,17 @@ def history_params(spec, head, rng):
     return [hex(blk), False]
 
 
+def live_head(chain, timeout):
+    """Current head via eth_blockNumber; falls back to the catalog snapshot."""
+    r = rpc_call(chain["chainId"], {"method": "eth_blockNumber", "params": []}, timeout=timeout)
+    if r["ok"]:
+        try:
+            return int(r["result"], 16), "live"
+        except (ValueError, TypeError):
+            pass
+    return (chain.get("head") or 0), "snapshot"
+
+
 # ---- error classification ---------------------------------------------------
 # code -> (short label, one-line explanation). Order of ERROR_RULES matters:
 # first match wins.

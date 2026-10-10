@@ -10,8 +10,9 @@ Two things the first-pass bench did not do:
 
 2. CACHE BENEFIT
    The router has a response cache but exposes no per-call hit header, so we
-   measure it by latency: for each (chain) we pick a RANDOM historical block
-   (very unlikely to be warm) and call eth_getBlockByNumber(block,false)
+   measure it by latency: for each (chain) we pick a RANDOM recent block
+   (200-800 below the live head: very unlikely to be warm, but still inside
+   the window pruned upstreams serve) and call eth_getBlockByNumber(block,false)
    K+1 times back-to-back. Call #1 = cold (cache miss / upstream), calls #2..K =
    warm (should be served from cache). We report cold vs warm and the speedup.
    For contrast we do the same with the moving "latest" tag.
@@ -35,7 +36,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
-from rpcutil import rpc_call, pct, load_chains, classify_error, ERROR_KINDS
+from rpcutil import rpc_call, pct, load_chains, live_head, classify_error, ERROR_KINDS
 
 MAJORS = {1, 56, 137, 8453, 42161, 10, 43114, 250, 100, 324, 59144, 534352, 5000, 81457}
 
@@ -99,10 +100,12 @@ def stable_latency(chain, samples, rounds, gap, timeout):
 def cache_probe(chain, reps, timeout, rng):
     """cold vs warm latency for a fixed (cacheable) request and for 'latest'."""
     cid = chain["chainId"]
-    head = chain.get("head") or 0
-    # a fixed, immutable historical block, randomized so it is very likely cold
-    hi = max(1000, min(head - 10, 5_000_000)) if head > 2000 else max(1, head - 1)
-    blk = rng.randint(1000, hi) if hi > 1000 else 1
+    head, head_src = live_head(chain, timeout)
+    # a fixed, immutable block, randomized so it is very likely cold. Kept recent
+    # (head-200..800): pruned upstreams only serve the last ~1024 blocks, so an
+    # old block would measure archive availability (rpc_bench --methods history)
+    # instead of the cache.
+    blk = head - rng.randint(200, 800) if head > 1000 else max(1, head // 2)
     fixed_spec = {"id": "fixed_block", "method": "eth_getBlockByNumber",
                   "params": [hex(blk), False], "nonnull": True}
     latest_spec = {"id": "latest_block", "method": "eth_getBlockByNumber",
@@ -138,7 +141,8 @@ def cache_probe(chain, reps, timeout, rng):
             "calls": calls,
         }
 
-    return cid, {"fixed": run(fixed_spec), "latest": run(latest_spec), "block": blk}
+    return cid, {"fixed": run(fixed_spec), "latest": run(latest_spec), "block": blk,
+                 "head": head, "head_source": head_src}
 
 
 def fmt(x):
