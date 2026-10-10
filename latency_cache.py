@@ -15,6 +15,9 @@ Two things the first-pass bench did not do:
    K+1 times back-to-back. Call #1 = cold (cache miss / upstream), calls #2..K =
    warm (should be served from cache). We report cold vs warm and the speedup.
    For contrast we do the same with the moving "latest" tag.
+   Every call's error text and classified cause are kept; a null block counts
+   as a failure. When call #1 fails we record why, how long it took, and which
+   later call first succeeded (i.e. the router did not fail over by itself).
 
 Examples
 --------
@@ -32,7 +35,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
-from rpcutil import rpc_call, pct, load_chains
+from rpcutil import rpc_call, pct, load_chains, classify_error, ERROR_KINDS
 
 MAJORS = {1, 56, 137, 8453, 42161, 10, 43114, 250, 100, 324, 59144, 534352, 5000, 81457}
 
@@ -88,6 +91,7 @@ def stable_latency(chain, samples, rounds, gap, timeout):
             "max": max(lat) if lat else None,
             "stdev": statistics.pstdev(lat) if len(lat) > 1 else 0.0,
             "err": a["err"],
+            "err_kind": classify_error(a["err"]),
         }
     return cid, out
 
@@ -100,23 +104,38 @@ def cache_probe(chain, reps, timeout, rng):
     hi = max(1000, min(head - 10, 5_000_000)) if head > 2000 else max(1, head - 1)
     blk = rng.randint(1000, hi) if hi > 1000 else 1
     fixed_spec = {"id": "fixed_block", "method": "eth_getBlockByNumber",
-                  "params": [hex(blk), False]}
+                  "params": [hex(blk), False], "nonnull": True}
     latest_spec = {"id": "latest_block", "method": "eth_getBlockByNumber",
-                   "params": ["latest", False]}
+                   "params": ["latest", False], "nonnull": True}
 
     def run(spec):
-        lats = []
+        calls = []
         for i in range(reps + 1):      # 1 cold + reps warm
             r = rpc_call(cid, spec, timeout=timeout, req_id=i + 1)
-            lats.append(r["latency"] if r["ok"] else None)
+            calls.append({"ok": r["ok"], "latency": r["latency"], "error": r["error"],
+                          "kind": classify_error(r["error"])})
+        lats = [c["latency"] if c["ok"] else None for c in calls]
         oks = [x for x in lats if x is not None]
         cold = lats[0]
-        warm = oks[1:] if len(oks) > 1 else []
+        # warm = successful calls after the first one; if the cold call failed,
+        # the first success is effectively the upstream fetch, so skip it too
+        warm = [x for x in lats[1:] if x is not None]
+        first_ok = next((i for i, c in enumerate(calls) if c["ok"]), None)
+        if cold is None and warm:
+            warm = warm[1:]
         return {
             "cold": cold,
+            # why call #1 failed (None when it succeeded) and how long it took to fail
+            "cold_error": calls[0]["error"],
+            "cold_kind": calls[0]["kind"],
+            "cold_fail_latency": None if calls[0]["ok"] else calls[0]["latency"],
+            # when call #1 failed: which call first succeeded (1-based) and its latency
+            "retry_ok_call": None if cold is not None or first_ok is None else first_ok + 1,
+            "retry_ok_latency": None if cold is not None or first_ok is None else lats[first_ok],
             "warm_med": statistics.median(warm) if warm else None,
             "warm_min": min(warm) if warm else None,
             "ok": len(oks), "reps": reps + 1,
+            "calls": calls,
         }
 
     return cid, {"fixed": run(fixed_spec), "latest": run(latest_spec), "block": blk}
@@ -199,7 +218,7 @@ def _write_outputs(args, ts, lat_res, cache_res, name_by_id):
     with open(cache_csv, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["chainId", "name", "variant", "block", "cold_ms", "warm_med_ms",
-                    "warm_min_ms", "speedup_x", "saved_ms", "ok", "reps"])
+                    "warm_min_ms", "speedup_x", "saved_ms", "ok", "reps", "cold_error_kind", "cold_error"])
         for cid, c in cache_res.items():
             for variant in ("fixed", "latest"):
                 v = c[variant]
@@ -213,7 +232,7 @@ def _write_outputs(args, ts, lat_res, cache_res, name_by_id):
                             "" if v["warm_min"] is None else "%.0f" % (v["warm_min"] * 1000),
                             "" if speed == "" else "%.2f" % speed,
                             "" if saved == "" else "%.0f" % saved,
-                            v["ok"], v["reps"]])
+                            v["ok"], v["reps"], v["cold_kind"] or "", v["cold_error"] or ""])
     print("wrote %s" % raw)
     print("wrote %s" % lat_csv)
     print("wrote %s" % cache_csv)
@@ -265,6 +284,15 @@ def _report(lat_res, cache_res, name_by_id):
     print("  %-10s %8s %8s %8s  %s" % ("chainId", "cold_ms", "warm_ms", "speedup", "name"))
     for cid, cold, warm, sp in wins[:10]:
         print("  %-10s %s %s %7.1fx  %s" % (cid, fmt(cold), fmt(warm), sp, name_by_id.get(cid, "")[:28]))
+
+    # chains whose cold call failed -> no cold latency / speedup for them
+    failed = [(cid, c["fixed"]) for cid, c in cache_res.items() if c["fixed"]["cold"] is None]
+    print("\n=== cold call failed (fixed-block): %d chains, excluded from speedup ===" % len(failed))
+    for cid, v in sorted(failed, key=lambda x: x[0]):
+        after = ("call #%d ok %s ms" % (v["retry_ok_call"], fmt(v["retry_ok_latency"]).strip())
+                 if v["retry_ok_call"] else "all %d calls failed" % v["reps"])
+        print("  %-10s %-14s %-22s %s | %s" % (
+            cid, ERROR_KINDS[v["cold_kind"]][0], after, name_by_id.get(cid, "")[:22], (v["cold_error"] or "")[:80]))
 
     # high-jitter chains (unstable latency) on eth_blockNumber
     print("\n=== least stable chains (highest jitter on eth_blockNumber, top 10) ===")
