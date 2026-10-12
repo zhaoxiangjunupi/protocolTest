@@ -1,137 +1,137 @@
 chainId,name,shortName,nativeSymbol,catalogEndpoints,endpoints,active,head,ingressTotal,tier,single_point,has_traffic,is_major
-4663,Robinhood Chain,robinhoodchain,ETH,11,11,2,84660309,10780,C-low,False,True,False
-56,BNB Smart Chain Mainnet,bnb,BNB,52,52,28,126750516,36,A-high,False,True,True
-1,Ethereum Mainnet,eth,ETH,57,57,30,26159143,24,A-high,False,True,True
-999,HyperEVM,hyper_evm,HYPE,11,11,5,48132968,19,B-medium,False,True,False
-57073,Ink,ink,ETH,9,9,4,58102107,19,B-medium,False,True,False
-8453,Base,base,ETH,33,32,13,52405586,17,A-high,False,True,True
-137,Polygon Mainnet,pol,POL,41,41,10,95263513,17,A-high,False,True,True
-42161,Arbitrum One,arb1,ETH,29,38,8,513389026,17,B-medium,False,True,True
-5042,Arc,arc,USDC,7,7,6,25172654,17,B-medium,False,True,False
-11155111,Ethereum Sepolia,sep,ETH,30,30,9,11881638,4,B-medium,False,True,False
-10,OP Mainnet,oeth,ETH,28,37,12,158000869,0,A-high,False,False,True
-369,PulseChain,pls,PLS,18,18,12,27758311,0,A-high,False,False,False
-143,Monad,monad,MON,18,18,11,112067156,0,A-high,False,False,False
-20181205,quarkblockchain,qki,QKI,12,12,10,38101326,0,A-high,False,False,False
-50,XDC Network,xdc,XDC,13,13,8,108182686,0,B-medium,False,False,False
-100,Gnosis,gno,XDAI,22,24,8,48678324,0,B-medium,False,False,True
-146,Sonic Mainnet,sonic,S,16,16,8,80670136,0,B-medium,False,False,False
-43114,Avalanche C-Chain,avax,AVAX,31,31,8,97169911,0,B-medium,False,False,True
-80094,Berachain,berachain,BERA,13,13,8,27292900,0,B-medium,False,False,False
-167000,Taiko,tko-mainnet,ETH,16,16,8,12478686,0,B-medium,False,False,False
-29,Genesis L1,L1,L1,8,8,7,13806755,0,B-medium,False,False,False
-250,Fantom Opera,ftm,FTM,22,22,7,123623816,0,B-medium,False,False,True
-534352,Scroll,scr,ETH,21,21,7,35327406,0,B-medium,False,False,True
-25,Cronos Mainnet,cro,CRO,18,18,6,98985347,0,B-medium,False,False,False
-173,ENI Mainnet,eni,EGAS,6,6,6,41220245,0,B-medium,False,False,False
-252,Fraxtal,frax,FRAX,9,10,6,42394903,0,B-medium,False,False,False
-1088,Metis Andromeda Mainnet,metis-andromeda,METIS,12,12,6,23260766,0,B-medium,False,False,False
-1319,AIA Mainnet,aia,AIA,8,8,6,54848721,0,B-medium,False,False,False
-2222,Kava,kava,KAVA,14,15,6,22954256,0,B-medium,False,False,False
-59144,Linea,linea,ETH,16,16,6,32280526,0,B-medium,False,False,True
-955305,Eluvio Content Fabric,elv,ELV,12,12,6,47467342,0,B-medium,False,False,False
-51,XDC Apothem Network,txdc,TXDC,7,7,5,83909150,0,B-medium,False,False,False
-75,Decimal Smart Chain Mainnet,DSC,DEL,7,7,5,34034846,0,B-medium,False,False,False
-130,Unichain,unichain,ETH,13,14,5,60852154,0,B-medium,False,False,False
-138,Defi Oracle Meta Mainnet,dfio-meta-main,ETH,6,6,5,10730325,0,B-medium,False,False,False
-254,Swan Chain Mainnet,Swan,ETH,6,6,5,14592060,0,B-medium,False,False,False
-314,Filecoin - Mainnet,filecoin,FIL,11,12,5,6443136,0,B-medium,False,False,False
-324,zkSync Mainnet,zksync,ETH,16,15,5,72410324,0,B-medium,False,False,True
-463,Areum Mainnet,areum,AREA,7,7,5,25641478,0,B-medium,False,False,False
-5000,Mantle,mantle,MNT,18,18,5,101735101,0,B-medium,False,False,True
-12306,Fibonacci Mainnet,fibo,FIBO,15,15,5,40421317,0,B-medium,False,False,False
-73115,ICB Network,ICBX,ICBX,7,7,5,20868037,0,B-medium,False,False,False
-747474,katana,katana,ETH,8,8,5,44857706,0,B-medium,False,False,False
-2632500,COTI,coti,COTI,10,10,5,9784112,0,B-medium,False,False,False
-58,Ontology Mainnet,OntologyMainnet,ONG,6,6,4,20909984,0,B-medium,False,False,False
-61,Ethereum Classic,etc,ETC,11,11,4,25506195,0,B-medium,False,False,False
-122,Fuse Mainnet,fuse,FUSE,9,10,4,44510590,0,B-medium,False,False,False
-169,Manta Pacific Mainnet,manta,ETH,11,12,4,9737655,0,B-medium,False,False,False
-196,X Layer Mainnet,okb,OKB,9,10,4,72831469,0,B-medium,False,False,False
-288,Boba Network,Boba,ETH,9,9,4,40297836,0,B-medium,False,False,False
-480,World Chain,wc,ETH,6,6,4,36132439,0,B-medium,False,False,False
-1514,Data Network,data,DATA,21,21,4,23164091,0,B-medium,False,False,False
-4326,MegaETH,megaeth,ETH,5,5,4,28803497,0,B-medium,False,False,False
-4689,IoTeX Network Mainnet,iotex-mainnet,IOTX,9,9,4,53224951,0,B-medium,False,False,False
-8880,Unique,unq,UNQ,6,6,4,13153395,0,B-medium,False,False,False
-11235,Haqq Network,ISLM,ISLM,8,8,4,22779205,0,B-medium,False,False,False
-42170,Arbitrum Nova,arb-nova,ETH,10,10,4,85283738,0,B-medium,False,False,False
-42220,Celo Mainnet,celo,CELO,12,12,4,79699755,0,B-medium,False,False,False
-60808,BOB,bob,ETH,8,8,4,39369260,0,B-medium,False,False,False
-73790,NV-CHAIN,nvc,NVC,5,5,4,1728613,0,B-medium,False,False,False
-81457,Blast,blastmainnet,ETH,20,19,4,41395349,0,B-medium,False,False,True
-88888,Chiliz Chain,chiliz,CHZ,8,8,4,38277078,0,B-medium,False,False,False
-1666600000,Harmony Mainnet Shard 0,hmy-s0,ONE,13,13,4,93624315,0,B-medium,False,False,False
-8,c8ntinuum,ctm,CTM,4,5,3,909254,0,C-low,False,False,False
-14,Flare Mainnet,flr,FLR,10,10,3,71744135,0,C-low,False,False,False
-20,Elastos Smart Chain,esc,ELA,8,10,3,38331859,0,C-low,False,False,False
-30,Rootstock Mainnet,rsk,RBTC,7,7,3,9311871,0,C-low,False,False,False
-81,Japan Open Chain Mainnet,joc,JOC,5,5,3,26394914,0,C-low,False,False,False
-199,BitTorrent Chain Mainnet,BTT,BTT,5,5,3,73869960,0,C-low,False,False,False
-204,opBNB Mainnet,obnb,BNB,14,14,3,193934307,0,C-low,False,False,False
-223,B2 Mainnet,B2-mainnet,BTC,8,8,3,39218360,0,C-low,False,False,False
-520,XT Smart Chain Mainnet,xt,XT,5,5,3,49979207,0,C-low,False,False,False
-1101,Polygon zkEVM,zkevm,ETH,11,11,3,33391890,0,C-low,False,False,False
-1116,Core Blockchain Mainnet,core,CORE,8,8,3,39429848,0,C-low,False,False,False
-1135,Lisk,lisk,ETH,7,7,3,38435860,0,C-low,False,False,False
-1284,Moonbeam,mbeam,GLMR,17,17,3,16796699,0,C-low,False,False,False
-1285,Moonriver,mriver,MOVR,12,12,3,17381654,0,C-low,False,False,False
-1868,Soneium,soneium,ETH,7,7,3,29232874,0,C-low,False,False,False
-2818,Morph,morph,ETH,5,5,3,28061250,0,C-low,False,False,False
-2999,BitYuan Mainnet,bty,BTY,5,5,3,47773757,0,C-low,False,False,False
-3338,peaq,PEAQ,PEAQ,5,5,3,11925085,0,C-low,False,False,False
-3797,AlveyChain Mainnet,alv,ALV,5,5,3,43712355,0,C-low,False,False,False
-6999,PolySmartChain,psc,PSC,5,5,3,20849623,0,C-low,False,False,False
-8217,Kaia Mainnet,kaia-mainnet,KAIA,13,13,3,229397896,0,C-low,False,False,False
-24734,MintMe.com Coin,mintme,MINTME,5,5,3,13015275,0,C-low,False,False,False
-31612,Mezo,mezo,BTC,6,6,3,12408083,0,C-low,False,False,False
-71111,GuapcoinX,GuapX,GuapX,5,5,3,4462811,0,C-low,False,False,False
-78281,Dragonfly Mainnet (Hexapod),dfly,DFLY,6,6,3,45822379,0,C-low,False,False,False
-222222,Hydration,hdx,WETH,13,13,3,15612398,0,C-low,False,False,False
-240241,Studio Blockchain Mainnet,stom,STO,5,5,3,5209479,0,C-low,False,False,False
-728126428,Tron Mainnet,tron,TRX,8,8,3,86975902,0,C-low,False,False,False
-1666600001,Harmony Mainnet Shard 1,hmy-s1,ONE,5,5,3,95883681,0,C-low,False,False,False
-19,Songbird Canary-Network,sgb,SGB,10,11,2,135003593,0,C-low,False,False,False
-42,LUKSO Mainnet,lukso,LYX,5,5,2,8544111,0,C-low,False,False,False
-57,Syscoin Mainnet,sys,SYS,6,6,2,1005534,0,C-low,False,False,False
-106,Velas EVM Mainnet,vlx,VLX,5,5,2,70377185,0,C-low,False,False,False
-109,Shibarium,shibariumecosystem,BONE,5,5,2,19360762,0,C-low,False,False,False
-232,Lens,lens,GHO,6,6,2,6339180,0,C-low,False,False,False
-239,TAC Mainnet,tacchain,TAC,7,7,2,26745142,0,C-low,False,False,False
-274,LaChain,lachain,LAC,5,5,2,23472941,0,C-low,False,False,False
-295,Hedera Mainnet,hedera-mainnet,HBAR,5,5,2,100938350,0,C-low,False,False,False
-321,KCC Mainnet,kcs,KCS,8,8,2,56351616,0,C-low,False,False,False
-388,Cronos zkEVM Mainnet,zkCRO,zkCRO,5,5,2,2671338,0,C-low,False,False,False
-592,Astar,astr,ASTR,11,12,2,15015343,0,C-low,False,False,False
-766,QL1,qom,QOM,5,5,2,12985607,0,C-low,False,False,False
-813,Qitmeer Network Mainnet,meer,MEER,9,9,2,2905100,0,C-low,False,False,False
-988,Stable Mainnet,stable,USDT0,5,5,2,42476082,0,C-low,False,False,False
-1009,Jumbochain Mainnet,Jumboscan,JNFTC,6,6,2,347832764,0,C-low,False,False,False
-1100,Dymension,dymension,DYM,13,13,2,23823609,0,C-low,False,False,False
-1287,Moonbase Alpha,mbase,DEV,7,7,2,17159874,0,C-low,False,False,False
-1329,Sei Network,sei,SEI,9,9,2,236718761,0,C-low,False,False,False
-2020,Ronin,ronin,RON,8,8,2,62065861,0,C-low,False,False,False
-2031,Centrifuge,cfg,CFG,5,5,2,9818491,0,C-low,False,False,False
-2440,Atleta Network,atla,ATLA,6,6,2,6185184,0,C-low,False,False,False
-4200,Merlin Mainnet,Merlin-Mainnet,BTC,8,8,2,32269974,0,C-low,False,False,False
-7000,ZetaChain Mainnet,zetachain-mainnet,ZETA,7,7,2,19385778,0,C-low,False,False,False
-8822,IOTA EVM,iotaevm,IOTA,6,6,2,13006021,0,C-low,False,False,False
-13371,Immutable zkEVM,imx,IMX,5,5,2,44658762,0,C-low,False,False,False
-34443,Mode,mode,ETH,8,8,2,45716467,0,C-low,False,False,False
-48900,Zircuit Mainnet,zircuit-mainnet,ETH,6,6,2,35832153,0,C-low,False,False,False
-1313161554,Aurora Mainnet,aurora,ETH,8,8,2,219318043,0,C-low,False,False,False
-40,Telos EVM Mainnet,TelosEVM,TLOS,6,7,1,493157153,0,C-low,True,False,False
-46,Darwinia Network,darwinia,RING,5,5,1,13425238,0,C-low,True,False,False
-66,OKXChain Mainnet,okt,OKT,7,7,1,47709365,0,C-low,True,False,False
-570,Rollux Mainnet,sys-rollux,SYS,4,5,1,52117629,0,C-low,True,False,False
-686,Karura Network,kar,KAR,5,6,1,12610200,0,C-low,True,False,False
-787,Acala Network,aca,ACA,5,5,1,12177903,0,C-low,True,False,False
-1089,Humans.ai Mainnet,humans,HEART,10,10,1,18485246,0,C-low,True,False,False
-2340,Atleta Olympia,olym,ATLA,6,5,1,10018942,0,C-low,True,False,False
-2741,Abstract,abstract,ETH,6,6,1,87309328,0,C-low,True,False,False
-9745,Plasma Mainnet,plasma,XPL,8,8,1,34659184,0,C-low,True,False,False
-10000,Smart Bitcoin Cash,smartbch,BCH,8,9,1,24056831,0,C-low,True,False,False
-42262,Oasis Emerald,emerald,ROSE,5,5,1,22380154,0,C-low,True,False,False
-98866,Plume Mainnet,plume-mainnet,PLUME,5,5,1,98475771,0,C-low,True,False,False
-200901,Bitlayer Mainnet,btr,BTC,6,6,1,26441046,0,C-low,True,False,False
-7777777,Zora,zora,ETH,5,5,1,52453332,0,C-low,True,False,False
+4663,Robinhood Chain,robinhoodchain,ETH,11,11,2,86296689,12368,C-low,False,True,False
+1,Ethereum Mainnet,eth,ETH,57,57,30,26173168,456,A-high,False,True,True
+56,BNB Smart Chain Mainnet,bnb,BNB,52,52,28,127125317,441,A-high,False,True,True
+8453,Base,base,ETH,33,32,12,52490004,428,A-high,False,True,True
+999,HyperEVM,hyper_evm,HYPE,11,11,5,48304556,401,B-medium,False,True,False
+57073,Ink,ink,ETH,9,9,4,58270949,401,B-medium,False,True,False
+137,Polygon Mainnet,pol,POL,41,41,10,95376055,399,A-high,False,True,True
+42161,Arbitrum One,arb1,ETH,29,29,10,513981232,399,A-high,False,True,True
+5042,Arc,arc,USDC,7,7,3,25505468,399,C-low,False,True,False
+11155111,Ethereum Sepolia,sep,ETH,30,30,10,11895674,384,A-high,False,True,False
+314,Filecoin - Mainnet,filecoin,FIL,11,11,5,6448764,360,B-medium,False,True,False
+146,Sonic Mainnet,sonic,S,16,16,7,80809743,335,B-medium,False,True,False
+10,OP Mainnet,oeth,ETH,28,28,11,158085292,304,A-high,False,True,True
+42220,Celo Mainnet,celo,CELO,12,12,4,79868588,304,B-medium,False,True,False
+728126428,Tron Mainnet,tron,TRX,8,8,4,87032168,304,B-medium,False,True,False
+100,Gnosis,gno,XDAI,22,22,8,48710773,287,B-medium,False,True,True
+80094,Berachain,berachain,BERA,13,13,7,27377319,287,B-medium,False,True,False
+2031,Centrifuge,cfg,CFG,5,5,2,9818491,287,C-low,False,True,False
+369,PulseChain,pls,PLS,18,18,10,27774749,281,A-high,False,True,False
+143,Monad,monad,MON,18,18,9,112626465,281,B-medium,False,True,False
+50,XDC Network,xdc,XDC,13,13,8,108258105,281,B-medium,False,True,False
+43114,Avalanche C-Chain,avax,AVAX,31,31,8,97323814,281,B-medium,False,True,True
+167000,Taiko,tko-mainnet,ETH,16,16,8,12563108,281,B-medium,False,True,False
+534352,Scroll,scr,ETH,21,21,8,35343277,281,B-medium,False,True,True
+20181205,quarkblockchain,qki,QKI,12,12,8,38107937,281,B-medium,False,True,False
+29,Genesis L1,L1,L1,8,8,6,13818841,281,B-medium,False,True,False
+173,ENI Mainnet,eni,EGAS,6,6,6,41386169,281,B-medium,False,True,False
+250,Fantom Opera,ftm,FTM,22,22,6,123651515,281,B-medium,False,True,True
+252,Fraxtal,frax,FRAX,9,9,6,42479324,281,B-medium,False,True,False
+1088,Metis Andromeda Mainnet,metis-andromeda,METIS,12,12,6,23266668,281,B-medium,False,True,False
+1319,AIA Mainnet,aia,AIA,8,8,6,54904995,281,B-medium,False,True,False
+2222,Kava,kava,KAVA,14,14,6,22983875,281,B-medium,False,True,False
+59144,Linea,linea,ETH,16,16,6,32297297,281,B-medium,False,True,True
+955305,Eluvio Content Fabric,elv,ELV,12,12,6,47492525,281,B-medium,False,True,False
+25,Cronos Mainnet,cro,CRO,18,18,5,99372730,281,B-medium,False,True,False
+51,XDC Apothem Network,txdc,TXDC,7,7,5,83984525,281,B-medium,False,True,False
+75,Decimal Smart Chain Mainnet,DSC,DEL,7,7,5,34065507,281,B-medium,False,True,False
+138,Defi Oracle Meta Mainnet,dfio-meta-main,ETH,6,6,5,10814748,281,B-medium,False,True,False
+169,Manta Pacific Mainnet,manta,ETH,11,11,5,9754538,281,B-medium,False,True,False
+204,opBNB Mainnet,obnb,BNB,14,14,5,194609726,281,B-medium,False,True,False
+254,Swan Chain Mainnet,Swan,ETH,6,6,5,14625828,281,B-medium,False,True,False
+324,zkSync Mainnet,zksync,ETH,16,15,5,72439863,281,B-medium,False,True,True
+463,Areum Mainnet,areum,AREA,7,7,5,25690074,281,B-medium,False,True,False
+480,World Chain,wc,ETH,6,6,5,36216859,281,B-medium,False,True,False
+1514,Data Network,data,DATA,21,21,5,23241609,281,B-medium,False,True,False
+5000,Mantle,mantle,MNT,18,18,5,101819523,281,B-medium,False,True,True
+8217,Kaia Mainnet,kaia-mainnet,KAIA,13,13,5,229566718,281,B-medium,False,True,False
+12306,Fibonacci Mainnet,fibo,FIBO,15,15,5,40465743,281,B-medium,False,True,False
+73115,ICB Network,ICBX,ICBX,7,7,5,20952391,281,B-medium,False,True,False
+747474,katana,katana,ETH,8,8,5,45026545,281,B-medium,False,True,False
+2632500,COTI,coti,COTI,10,10,5,9817874,281,B-medium,False,True,False
+14,Flare Mainnet,flr,FLR,10,10,4,71896541,281,B-medium,False,True,False
+58,Ontology Mainnet,OntologyMainnet,ONG,6,6,4,20911825,281,B-medium,False,True,False
+61,Ethereum Classic,etc,ETC,11,11,4,25518609,281,B-medium,False,True,False
+122,Fuse Mainnet,fuse,FUSE,9,9,4,44544355,281,B-medium,False,True,False
+130,Unichain,unichain,ETH,13,13,4,61020993,281,B-medium,False,True,False
+196,X Layer Mainnet,okb,OKB,9,9,4,73000322,281,B-medium,False,True,False
+4689,IoTeX Network Mainnet,iotex-mainnet,IOTX,9,9,4,53292177,281,B-medium,False,True,False
+8880,Unique,unq,UNQ,6,6,4,13171344,281,B-medium,False,True,False
+11235,Haqq Network,ISLM,ISLM,8,8,4,22779781,281,B-medium,False,True,False
+42170,Arbitrum Nova,arb-nova,ETH,10,10,4,85284185,281,B-medium,False,True,False
+60808,BOB,bob,ETH,8,8,4,39453685,281,B-medium,False,True,False
+71111,GuapcoinX,GuapX,GuapX,5,5,4,4486933,281,B-medium,False,True,False
+73790,NV-CHAIN,nvc,NVC,5,5,4,1745490,281,B-medium,False,True,False
+81457,Blast,blastmainnet,ETH,20,19,4,41479766,281,B-medium,False,True,True
+1666600000,Harmony Mainnet Shard 0,hmy-s0,ONE,13,13,4,93624315,281,B-medium,False,True,False
+8,c8ntinuum,ctm,CTM,4,4,3,952468,281,C-low,False,True,False
+20,Elastos Smart Chain,esc,ELA,8,8,3,38365617,281,C-low,False,True,False
+30,Rootstock Mainnet,rsk,RBTC,7,7,3,9317353,281,C-low,False,True,False
+81,Japan Open Chain Mainnet,joc,JOC,5,5,3,26428666,281,C-low,False,True,False
+199,BitTorrent Chain Mainnet,BTT,BTT,5,5,3,73951822,281,C-low,False,True,False
+223,B2 Mainnet,B2-mainnet,BTC,8,8,3,39302785,281,C-low,False,True,False
+288,Boba Network,Boba,ETH,9,9,3,40382254,281,C-low,False,True,False
+520,XT Smart Chain Mainnet,xt,XT,5,5,3,50035486,281,C-low,False,True,False
+1101,Polygon zkEVM,zkevm,ETH,11,11,3,33391890,281,C-low,False,True,False
+1116,Core Blockchain Mainnet,core,CORE,8,8,3,39486124,281,C-low,False,True,False
+1135,Lisk,lisk,ETH,7,7,3,38520284,281,C-low,False,True,False
+1284,Moonbeam,mbeam,GLMR,17,17,3,16796699,281,C-low,False,True,False
+1285,Moonriver,mriver,MOVR,12,12,3,17381654,281,C-low,False,True,False
+2020,Ronin,ronin,RON,8,8,3,62150280,281,C-low,False,True,False
+2818,Morph,morph,ETH,5,5,3,28150089,281,C-low,False,True,False
+2999,BitYuan Mainnet,bty,BTY,5,5,3,47807168,281,C-low,False,True,False
+3338,peaq,PEAQ,PEAQ,5,5,3,11949473,281,C-low,False,True,False
+3797,AlveyChain Mainnet,alv,ALV,5,5,3,43795799,281,C-low,False,True,False
+4326,MegaETH,megaeth,ETH,5,5,3,28972333,281,C-low,False,True,False
+6999,PolySmartChain,psc,PSC,5,5,3,20905904,281,C-low,False,True,False
+7000,ZetaChain Mainnet,zetachain-mainnet,ZETA,7,7,3,19429950,281,C-low,False,True,False
+24734,MintMe.com Coin,mintme,MINTME,5,5,3,13028491,281,C-low,False,True,False
+31612,Mezo,mezo,BTC,6,6,3,12451838,281,C-low,False,True,False
+34443,Mode,mode,ETH,8,8,3,45800885,281,C-low,False,True,False
+78281,Dragonfly Mainnet (Hexapod),dfly,DFLY,6,6,3,45880826,281,C-low,False,True,False
+88888,Chiliz Chain,chiliz,CHZ,8,8,3,38333353,281,C-low,False,True,False
+222222,Hydration,hdx,WETH,13,13,3,15687948,281,C-low,False,True,False
+240241,Studio Blockchain Mainnet,stom,STO,5,5,3,5229704,281,C-low,False,True,False
+1666600001,Harmony Mainnet Shard 1,hmy-s1,ONE,5,5,3,95883681,281,C-low,False,True,False
+19,Songbird Canary-Network,sgb,SGB,10,10,2,135166286,281,C-low,False,True,False
+42,LUKSO Mainnet,lukso,LYX,5,5,2,8557263,281,C-low,False,True,False
+57,Syscoin Mainnet,sys,SYS,6,6,2,1006664,281,C-low,False,True,False
+66,OKXChain Mainnet,okt,OKT,7,7,2,47753788,281,C-low,False,True,False
+106,Velas EVM Mainnet,vlx,VLX,5,5,2,70380371,281,C-low,False,True,False
+109,Shibarium,shibariumecosystem,BONE,5,5,2,19392702,281,C-low,False,True,False
+232,Lens,lens,GHO,6,6,2,6344825,281,C-low,False,True,False
+239,TAC Mainnet,tacchain,TAC,7,7,2,26852624,281,C-low,False,True,False
+274,LaChain,lachain,LAC,5,5,2,23472941,281,C-low,False,True,False
+295,Hedera Mainnet,hedera-mainnet,HBAR,5,5,2,101015906,281,C-low,False,True,False
+321,KCC Mainnet,kcs,KCS,8,8,2,56407896,281,C-low,False,True,False
+388,Cronos zkEVM Mainnet,zkCRO,zkCRO,5,5,2,2672292,281,C-low,False,True,False
+592,Astar,astr,ASTR,11,11,2,15041340,281,C-low,False,True,False
+766,QL1,qom,QOM,5,5,2,13013839,281,C-low,False,True,False
+813,Qitmeer Network Mainnet,meer,MEER,9,9,2,2908067,281,C-low,False,True,False
+988,Stable Mainnet,stable,USDT0,5,5,2,42716310,281,C-low,False,True,False
+1009,Jumbochain Mainnet,Jumboscan,JNFTC,6,6,2,348689004,281,C-low,False,True,False
+1100,Dymension,dymension,DYM,13,13,2,23861277,281,C-low,False,True,False
+1287,Moonbase Alpha,mbase,DEV,7,7,2,17159874,281,C-low,False,True,False
+1868,Soneium,soneium,ETH,7,7,2,29317301,281,C-low,False,True,False
+2440,Atleta Network,atla,ATLA,6,6,2,6211844,281,C-low,False,True,False
+2741,Abstract,abstract,ETH,6,6,2,87447714,281,C-low,False,True,False
+4200,Merlin Mainnet,Merlin-Mainnet,BTC,8,8,2,32312037,281,C-low,False,True,False
+8822,IOTA EVM,iotaevm,IOTA,6,6,2,13011050,281,C-low,False,True,False
+13371,Immutable zkEVM,imx,IMX,5,5,2,44743181,281,C-low,False,True,False
+48900,Zircuit Mainnet,zircuit-mainnet,ETH,6,6,2,35916569,281,C-low,False,True,False
+98866,Plume Mainnet,plume-mainnet,PLUME,5,5,2,98887735,281,C-low,False,True,False
+7777777,Zora,zora,ETH,5,5,2,52537753,281,C-low,False,True,False
+1313161554,Aurora Mainnet,aurora,ETH,8,8,2,219605005,281,C-low,False,True,False
+40,Telos EVM Mainnet,TelosEVM,TLOS,6,6,1,493493794,281,C-low,True,True,False
+46,Darwinia Network,darwinia,RING,5,5,1,13450350,281,C-low,True,True,False
+570,Rollux Mainnet,sys-rollux,SYS,4,4,1,52202058,281,C-low,True,True,False
+686,Karura Network,kar,KAR,5,5,1,12623828,281,C-low,True,True,False
+787,Acala Network,aca,ACA,5,5,1,12191851,281,C-low,True,True,False
+1089,Humans.ai Mainnet,humans,HEART,10,10,1,18514857,281,C-low,True,True,False
+2340,Atleta Olympia,olym,ATLA,6,5,1,10047085,281,C-low,True,True,False
+9745,Plasma Mainnet,plasma,XPL,8,8,1,34828029,281,C-low,True,True,False
+10000,Smart Bitcoin Cash,smartbch,BCH,8,8,1,24071502,281,C-low,True,True,False
+42262,Oasis Emerald,emerald,ROSE,5,5,1,22380203,281,C-low,True,True,False
+200901,Bitlayer Mainnet,btr,BTC,6,6,1,26497322,281,C-low,True,True,False
+1329,Sei Network,sei,SEI,9,9,2,237087454,155,C-low,False,True,False

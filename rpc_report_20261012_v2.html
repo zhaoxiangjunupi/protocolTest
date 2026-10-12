@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RPC 路由器体检报告</title>
+<meta name="description" content="cryptostack RPC 路由器多链体检:分类、常规与历史区块可用性、失败原因、延迟与缓存">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+  /* Layout: single editorial column of telemetry cards; mono kickers + figures, system-sans body */
+  :root{
+    color-scheme: light;
+    --bg:#f4f3ef; --surface:#ffffff; --surface-2:#f6f5f1; --raise:#fbfbf9;
+    --fg:#0b0b0b; --fg-2:#52514e; --muted:#898781;
+    --grid:#e4e3dc; --border:rgba(11,11,11,.11); --border-strong:rgba(11,11,11,.18);
+    --accent:#2a78d6; --s-blue:#2a78d6; --s-orange:#eb6834; --s-aqua:#1baf7a; --s-violet:#7b5cc4;
+    --good:#0ca30c; --warn:#d98b00; --crit:#d03b3b;
+    --good-ink:#0a7a0a; --warn-ink:#a06500; --crit-ink:#c0302f;
+    --tierA:#184f95; --tierB:#3987e5; --tierC:#9ec5f4;
+    --shadow:0 1px 2px rgba(11,11,11,.05),0 1px 0 rgba(11,11,11,.03);
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#0c0c0c; --surface:#191918; --surface-2:#211f1e; --raise:#201e1d;
+    --fg:#f0efec; --fg-2:#c3c2b7; --muted:#8f8d86;
+    --grid:#2c2c2a; --border:rgba(255,255,255,.11); --border-strong:rgba(255,255,255,.2);
+    --accent:#3987e5; --s-blue:#3987e5; --s-orange:#e2703f; --s-aqua:#2bb98a; --s-violet:#9a7fe0;
+    --good:#0ca30c; --warn:#fab219; --crit:#e05a5a;
+    --good-ink:#2fb82f; --warn-ink:#f0b53a; --crit-ink:#e86a6a;
+    --tierA:#9ec5f4; --tierB:#3987e5; --tierC:#1c5cab;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }}
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --bg:#0c0c0c; --surface:#191918; --surface-2:#211f1e; --raise:#201e1d;
+    --fg:#f0efec; --fg-2:#c3c2b7; --muted:#8f8d86;
+    --grid:#2c2c2a; --border:rgba(255,255,255,.11); --border-strong:rgba(255,255,255,.2);
+    --accent:#3987e5; --s-blue:#3987e5; --s-orange:#e2703f; --s-aqua:#2bb98a; --s-violet:#9a7fe0;
+    --good:#0ca30c; --warn:#fab219; --crit:#e05a5a;
+    --good-ink:#2fb82f; --warn-ink:#f0b53a; --crit-ink:#e86a6a;
+    --tierA:#9ec5f4; --tierB:#3987e5; --tierC:#1c5cab;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.5;
+       -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1100px;margin:0 auto;padding-inline:20px;padding-block:0 72px;}
+  .tnum{font-variant-numeric:tabular-nums}
+  code{font-family:var(--mono);font-size:.92em;background:var(--surface-2);padding:1px 6px;border-radius:4px;border:1px solid var(--border)}
+
+  /* masthead */
+  header.mast{padding-block:40px 24px;border-bottom:1px solid var(--border-strong);margin-bottom:28px;}
+  .kick{font-family:var(--mono);font-weight:500;font-size:12px;letter-spacing:.14em;
+        text-transform:uppercase;color:var(--muted);}
+  h1{font-family:var(--mono);font-weight:700;font-size:clamp(26px,5vw,40px);line-height:1.08;
+     margin:.3em 0 .35em;text-wrap:balance;letter-spacing:-.01em;}
+  .sub{color:var(--fg-2);font-size:15px;max-width:72ch;margin:0}
+  .sub b{color:var(--fg)}
+  .metaline{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:16px;font-family:var(--mono);
+            font-size:12.5px;color:var(--fg-2);}
+  .metaline b{color:var(--fg);font-weight:700}
+  .metaline a{color:var(--accent);text-decoration:none}
+
+  /* KPI tiles */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:34px;}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:16px 16px 14px;
+       box-shadow:var(--shadow);min-width:0;}
+  .kpi .lab{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+  .kpi .val{font-size:clamp(26px,4vw,34px);font-weight:700;line-height:1.05;margin-top:7px;letter-spacing:-.02em;}
+  .kpi .val small{font-size:.5em;font-weight:600;color:var(--fg-2);margin-left:2px}
+  .kpi .note{font-size:12px;color:var(--fg-2);margin-top:4px}
+  .kpi.good .val{color:var(--good-ink)} .kpi.warn .val{color:var(--warn-ink)} .kpi.crit .val{color:var(--crit-ink)}
+
+  section{margin-bottom:38px;}
+  .sechead{display:flex;align-items:baseline;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+  h2{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+     color:var(--accent);margin:0;}
+  h3.sm{font-family:var(--mono);font-size:12.5px;font-weight:700;margin:22px 0 8px;color:var(--fg)}
+  .secsub{color:var(--fg-2);font-size:13.5px;margin:2px 0 16px;max-width:80ch}
+  .secsub b{color:var(--fg)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:20px 22px;
+        box-shadow:var(--shadow);}
+  .howto{font-size:12.5px;color:var(--fg-2);background:var(--surface-2);border:1px solid var(--border);
+         border-left:3px solid var(--accent);border-radius:7px;padding:10px 13px;margin:0 0 14px;max-width:80ch}
+  .howto b{color:var(--fg)}
+
+  /* glossary */
+  .gloss{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 26px}
+  .gloss .gi{display:grid;grid-template-columns:118px 1fr;gap:10px;align-items:baseline;font-size:13px;
+             padding-bottom:10px;border-bottom:1px dashed var(--grid)}
+  .gloss .gk{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--fg)}
+  .gloss .gv{color:var(--fg-2)}
+  .gloss .gv b{color:var(--fg)}
+
+  /* tiers bar */
+  .tierbar{display:flex;height:34px;border-radius:7px;overflow:hidden;border:1px solid var(--border);}
+  .tierseg{display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--mono);
+           font-weight:700;font-size:13px;min-width:0;}
+  .tierlegend{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:14px;font-size:13px;color:var(--fg-2)}
+  .tierlegend .dot{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+  .tagrow{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+  .tag{font-size:12.5px;padding:5px 11px;border-radius:999px;border:1px solid var(--border);
+       background:var(--surface-2);color:var(--fg-2)}
+  .tag b{color:var(--fg)}
+
+  /* generic horizontal bar rows */
+  .bars{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .barrow{display:grid;grid-template-columns:178px 1fr;gap:12px;align-items:center}
+  .barrow.f3{grid-template-columns:178px 1fr 64px}
+  .barrow .fc{font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--crit-ink);white-space:nowrap}
+  .barrow .name{font-size:13px;color:var(--fg-2);text-align:right;min-width:0;overflow:hidden;
+                text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .barrow .name small{color:var(--muted);font-family:var(--mono);font-size:10.5px;margin-left:4px}
+  .track{position:relative;height:22px;background:var(--surface-2);border-radius:5px;overflow:hidden}
+  .fill{height:100%;border-radius:5px;display:flex;align-items:center}
+  .fill .vlab{font-family:var(--mono);font-size:11.5px;font-weight:700;color:#fff;padding:0 8px;white-space:nowrap}
+  .vlab.out{color:var(--fg);position:absolute;left:100%;padding-left:8px;top:0;height:100%;display:flex;align-items:center;
+            font-family:var(--mono);font-size:11.5px;font-weight:700;white-space:nowrap}
+  .failnote{font-family:var(--mono);font-size:11px;color:var(--crit-ink);margin-left:8px;font-weight:700}
+
+  /* cache cold->warm rows */
+  .crow{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center}
+  .crow .cn{font-size:13px;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .crow .cn small{color:var(--muted);font-family:var(--mono);font-size:11px;margin-left:5px}
+  .cbarwrap{position:relative;height:24px;background:var(--surface-2);border-radius:5px}
+  .cbar{position:absolute;left:0;top:0;height:100%;border-radius:5px;background:var(--s-orange)}
+  .cann{position:absolute;top:0;height:100%;display:flex;align-items:center;gap:8px;
+        font-family:var(--mono);font-size:11.5px;white-space:nowrap;padding-left:9px}
+  .cann .cold{color:#fff;font-weight:700}
+  .cann.dark .cold{color:var(--fg)}
+  .cann .sx{color:var(--s-aqua);font-weight:700}
+  .cann .warm{color:var(--fg-2)}
+  .cann:not(.dark) .warm{color:rgba(255,255,255,.88)}
+  .cann:not(.dark) .sx{color:#fff}
+
+  /* depth tiles (history) */
+  .dtiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .dtile{border:1px solid var(--border);border-radius:9px;padding:13px 15px;background:var(--surface-2);min-width:0}
+  .dtile .dl{font-family:var(--mono);font-size:12px;font-weight:700}
+  .dtile .dw{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .dtile .dv{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-top:6px;line-height:1.1}
+  .dtile .dv small{font-size:.5em;color:var(--fg-2);font-weight:600}
+  .dtile .dn{font-size:12px;color:var(--fg-2);margin-top:4px}
+  .dtile .dd{font-size:12px;color:var(--fg-2);margin-top:8px;border-top:1px dashed var(--grid);padding-top:8px}
+
+  /* tables */
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{padding:9px 12px;text-align:left;white-space:nowrap;vertical-align:top}
+  thead th{font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+           color:var(--fg-2);border-bottom:1px solid var(--border-strong);position:sticky;top:0;
+           background:var(--surface);user-select:none;vertical-align:bottom;font-weight:700;z-index:1}
+  thead th small{display:block;font-weight:500;font-size:10px;color:var(--muted);letter-spacing:0;margin-top:2px}
+  thead th.num small{text-align:right}
+  table.sortable thead th{cursor:pointer}
+  thead th.sorted::after{content:" ▾";color:var(--accent)}
+  thead th.asc.sorted::after{content:" ▴"}
+  tbody tr{border-top:1px solid var(--grid)}
+  tbody tr:hover{background:var(--surface-2)}
+  td.num,th.num{text-align:right}
+  td.num{font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12px}
+  td.long{white-space:normal;min-width:280px;max-width:520px;font-size:12px;color:var(--fg-2);line-height:1.45}
+  td.long .err{font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-word}
+  .pill{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:.03em}
+  .pill.A{background:color-mix(in srgb,var(--tierA) 22%,transparent);color:var(--tierA)}
+  .pill.B{background:color-mix(in srgb,var(--tierB) 20%,transparent);color:var(--tierB)}
+  .pill.C{background:color-mix(in srgb,var(--s-blue) 14%,transparent);color:var(--fg-2)}
+  .dotok{color:var(--good-ink)} .dotsp{color:var(--warn-ink);font-size:11px;font-family:var(--mono)}
+
+  /* status marks */
+  .badge{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:5px;
+         letter-spacing:.02em;line-height:1.6;white-space:nowrap}
+  .badge.fail{background:color-mix(in srgb,var(--crit) 16%,transparent);color:var(--crit-ink);border:1px solid color-mix(in srgb,var(--crit) 35%,transparent)}
+  .badge.part{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn-ink);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
+  .badge.ok{background:color-mix(in srgb,var(--good) 12%,transparent);color:var(--good-ink);border:1px solid color-mix(in srgb,var(--good) 28%,transparent)}
+  .badge.skip{background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+  .na{color:var(--muted)}
+  .chip{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:999px;margin:1px 4px 1px 0;white-space:nowrap;border:1px solid}
+  .chip.crit{color:var(--crit-ink);border-color:color-mix(in srgb,var(--crit) 40%,transparent);background:color-mix(in srgb,var(--crit) 10%,transparent)}
+  .chip.warn{color:var(--warn-ink);border-color:color-mix(in srgb,var(--warn) 40%,transparent);background:color-mix(in srgb,var(--warn) 10%,transparent)}
+  .chip.info{color:var(--fg-2);border-color:var(--border-strong);background:var(--surface-2)}
+  .chip.okc{color:var(--good-ink);border-color:color-mix(in srgb,var(--good) 30%,transparent)}
+  .v-warn{color:var(--warn-ink);font-weight:700} .v-crit{color:var(--crit-ink);font-weight:700}
+  [data-ti]{cursor:help}
+  [data-ti].badge, [data-ti].chip{text-decoration:none}
+
+  /* failures */
+  .failgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .failcard{border:1px solid var(--border);border-radius:9px;padding:14px 16px;background:var(--surface-2)}
+  .failcard h3{margin:0 0 2px;font-size:13.5px;font-family:var(--mono);font-weight:700;color:var(--warn-ink)}
+  .failcard.exhausted h3{color:var(--crit-ink)}
+  .failcard .kd{font-size:12px;color:var(--fg-2);margin:0 0 6px}
+  .failcard ul{margin:8px 0 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+  .failcard li{font-size:12.5px;color:var(--fg-2);line-height:1.4}
+  .failcard li b{color:var(--fg);font-family:var(--mono);font-weight:700;font-size:12px}
+  .failcard .m{display:block;color:var(--muted);font-size:11.5px;font-family:var(--mono);margin-top:1px;word-break:break-word}
+
+  /* controls */
+  .ctrls{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;align-items:center}
+  .ctrls input[type=text],.ctrls select{font:inherit;font-size:13px;padding:7px 11px;border:1px solid var(--border-strong);
+       border-radius:7px;background:var(--surface);color:var(--fg)}
+  .ctrls input[type=text]{min-width:160px;flex:1 1 180px;max-width:280px}
+  .ctrls .count{font-family:var(--mono);font-size:12px;color:var(--muted);margin-left:auto}
+  .legendrow{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--fg-2);margin:0 0 12px}
+
+  /* methodology */
+  pre{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:14px 16px;
+      overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.6;color:var(--fg);margin:16px 0 0}
+  .mlist{display:grid;gap:10px;margin-top:4px}
+  .mlist .mi{display:grid;grid-template-columns:150px 1fr;gap:14px;font-size:13.5px;align-items:baseline}
+  .mlist .mi .k{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700}
+  .mlist .mi .v{color:var(--fg-2)}
+
+  footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--border);
+         font-size:12.5px;color:var(--muted);font-family:var(--mono);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+
+  /* tooltip */
+  #tip{position:fixed;pointer-events:none;z-index:50;background:var(--fg);color:var(--bg);
+       font-family:var(--sans);font-size:12px;padding:8px 11px;border-radius:7px;opacity:0;
+       transition:opacity .08s;max-width:340px;box-shadow:0 4px 14px rgba(0,0,0,.25);line-height:1.5}
+  #tip b{font-weight:700}
+  #tip .tm{font-family:var(--mono);font-size:11px;opacity:.8;word-break:break-word;display:block;margin-top:3px}
+
+  .legend-inline{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--fg-2);margin-bottom:14px}
+  .legend-inline .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+  @media (max-width:720px){
+    .wrap{padding-inline:16px}
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    .failgrid,.gloss,.dtiles{grid-template-columns:1fr}
+    .gloss .gi{grid-template-columns:1fr;gap:2px}
+    .barrow{grid-template-columns:118px 1fr}
+    .crow{grid-template-columns:110px 1fr}
+    .barrow .name{font-size:12px}
+    .mlist .mi{grid-template-columns:1fr;gap:2px}
+    .card{padding:16px 15px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div class="kick">多链 RPC 体检 · Availability · History · Latency · Cache</div>
+    <h1>RPC 路由器体检报告</h1>
+    <p class="sub" id="summary"></p>
+    <div class="metaline" id="metaline"></div>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+
+  <section>
+    <div class="sechead"><h2>00 · 怎么读这份报告</h2></div>
+    <p class="secsub">报告里所有名词和标记的含义。表格里带下划虚线或标记的格子，鼠标悬停（手机上点一下）能看到详细原因和错误原文。</p>
+    <div class="card"><div class="gloss" id="gloss"></div></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>01 · 链分类</h2></div>
+    <p class="secsub">按<b>活跃上游节点数</b>分三层。节点越少，单点故障风险越高。C 层里只有 1 个活跃节点的是<b>单点链</b>，这个节点一挂整条链就不可用。</p>
+    <div class="card">
+      <div class="tierbar" id="tierbar"></div>
+      <div class="tierlegend" id="tierlegend"></div>
+      <div class="tagrow" id="tiertags"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>02 · 问题链汇总</h2></div>
+    <p class="secsub" id="issuesub"></p>
+    <div class="tagrow" id="issuechips" style="margin:0 0 14px"></div>
+    <div class="tablewrap" style="max-height:560px;overflow-y:auto">
+      <table id="issuetable"><thead><tr>
+        <th>链</th><th class="num">chainId</th><th>层</th>
+        <th>级别</th><th>问题<small>悬停看说明</small></th><th>详情<small>测试中观察到的情况 + 错误原文</small></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>03 · 可用性（按方法）</h2></div>
+    <p class="secsub" id="availsub"></p>
+    <div class="card">
+      <div class="legend-inline">
+        <span><span class="sw" style="background:var(--s-blue)"></span>简单方法（元数据）</span>
+        <span><span class="sw" style="background:var(--s-orange)"></span>复杂方法（最新区块 / 状态 / 日志）</span>
+        <span><span class="sw" style="background:var(--s-violet)"></span>历史区块（3 个深度）</span>
+      </div>
+      <div class="bars" id="availbars"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>04 · 失败原因（常规方法）</h2></div>
+    <p class="secsub" id="failsub"></p>
+    <div class="failgrid" id="failgrid"></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>05 · 历史区块可用性</h2></div>
+    <p class="secsub">最新区块能查，不代表历史区块也能查。很多上游节点只保留最近一段区块，查更早的会报错或返回空。每条链在三个深度各查 <b id="hsamples"></b> 次，<b>每次随机换一个区块</b>，保证不命中缓存、真正打到上游。<b>返回空（null）也算失败。</b></p>
+    <div class="howto"><b>怎么理解：</b><b>部分失败</b>（有成功也有失败）说明上游池里有的节点有这段数据、有的没有，路由器把请求分到没数据的节点时没有自动换节点重试；<b>全部失败</b>（一次都没成功）说明这条链所有上游都没有这段数据，用户根本查不到；<b>未测</b>是链太短，取不到这个深度的区块。</div>
+    <div class="dtiles" id="dtiles"></div>
+    <h3 class="sm" id="htitle"></h3>
+    <div class="tablewrap" style="max-height:520px;overflow-y:auto">
+      <table id="histtable"><thead><tr>
+        <th>链</th><th class="num">chainId</th><th>层</th>
+        <th id="h-hist_recent">近期区块</th><th id="h-hist_mid">中期区块</th><th id="h-hist_early">早期区块</th>
+        <th>主要原因<small>出现最多的错误</small></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>06 · 热路径延迟</h2></div>
+    <p class="secsub" id="latsub"></p>
+    <div class="card">
+      <div class="legend-inline">
+        <span><span class="sw" style="background:var(--s-blue)"></span>p50（中位数：一半请求比它快）</span>
+        <span><span class="sw" style="background:var(--grid);border:1px solid var(--border-strong)"></span>p50 → p95 区间（p95：只有 5% 的请求比它慢）</span>
+      </div>
+      <div class="bars" id="latbars"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>07 · 缓存价值</h2></div>
+    <p class="secsub" id="cachesub"></p>
+    <div class="howto"><b>测法：</b>每条链随机挑一个近期区块（最新块往前 200–800 块，未被缓存、但普通节点也都保留），对同一个 <code>eth_getBlockByNumber</code> 请求连发 <b id="creps"></b> 次。<b>冷回源</b> = 第 1 次耗时（缓存里没有，要去上游取）；<b>缓存命中</b> = 后面几次耗时的中位数；<b>加速</b> = 冷回源 ÷ 缓存命中。<br>
+      <b>注意：</b>加速倍数高说明<b>上游慢</b>、缓存在帮它兜底，但用户第一次查或查不可缓存的数据时照样慢，这些链的上游更该优化。</div>
+    <div class="card">
+      <div class="legend-inline">
+        <span><span class="sw" style="background:var(--s-orange)"></span>橙条长度 = 冷回源耗时</span>
+        <span>右侧标注：冷回源 ms → 缓存命中 ms · <b style="color:var(--s-aqua)">加速倍数</b></span>
+      </div>
+      <div class="bars" id="cachebars" style="gap:10px"></div>
+    </div>
+    <h3 class="sm" id="cftitle"></h3>
+    <p class="secsub" style="margin-bottom:10px">这些链拿不到冷回源耗时，所以没有计入上面的加速统计；全部链明细里它们的冷回源列显示 <span class="badge fail">失败</span>。</p>
+    <div class="tablewrap" style="max-height:460px;overflow-y:auto">
+      <table id="cftable"><thead><tr>
+        <th>链</th><th class="num">chainId</th><th>失败原因</th>
+        <th class="num">第 1 次<small>失败前耗时 ms</small></th>
+        <th>之后<small>后续请求的结果</small></th>
+        <th>错误原文</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>08 · 延迟抖动</h2></div>
+    <p class="secsub" id="jitsub"></p>
+    <div class="tablewrap">
+      <table id="jittertable"><thead><tr>
+        <th>链</th><th class="num">chainId</th>
+        <th class="num">抖动 ms<small>耗时的标准差</small></th>
+        <th class="num">p50 ms<small>中位数</small></th>
+        <th class="num">p95 ms<small>慢的时候</small></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>09 · 全部链明细</h2></div>
+    <p class="secsub" id="allsub"></p>
+    <div class="legendrow">
+      <span><span class="badge fail">失败</span> 这项请求失败，悬停看原因</span>
+      <span><span class="na">—</span> 无法计算（依赖的数据失败了）</span>
+      <span><span class="v-warn">数字</span> 可用率 &lt; 100%</span>
+      <span><span class="dotsp">▲</span> 单点（仅 1 个活跃节点）</span>
+    </div>
+    <div class="ctrls">
+      <input id="q" type="text" placeholder="搜索链名 / chainId…" aria-label="搜索">
+      <select id="tierf" aria-label="按分层筛选">
+        <option value="">全部分层</option>
+        <option value="A-high">A 高冗余</option>
+        <option value="B-medium">B 中</option>
+        <option value="C-low">C 低/单点</option>
+      </select>
+      <select id="levelf" aria-label="按问题级别筛选">
+        <option value="">全部状态</option>
+        <option value="0">只看严重</option>
+        <option value="1">严重 + 警告</option>
+        <option value="ok">只看正常</option>
+      </select>
+      <label style="font-size:13px;color:var(--fg-2)"><input type="checkbox" id="spf"> 仅单点</label>
+      <span class="count" id="rowcount"></span>
+    </div>
+    <div class="tablewrap" style="max-height:600px;overflow-y:auto">
+      <table id="alltable" class="sortable"><thead><tr>
+        <th data-k="name">链</th>
+        <th data-k="chainId" class="num">chainId</th>
+        <th data-k="tier">层</th>
+        <th data-k="level">问题<small>点表头按严重度排 · 悬停看详情</small></th>
+        <th data-k="active" class="num">活跃节点</th>
+        <th data-k="avail" class="num">常规可用率<small>% · 最新区块类</small></th>
+        <th data-k="havail" class="num">历史可用率<small>% · 3 个深度</small></th>
+        <th data-k="p50" class="num">p50<small>ms · eth_blockNumber</small></th>
+        <th data-k="cold" class="num">冷回源<small>ms · 第 1 次</small></th>
+        <th data-k="warm" class="num">缓存命中<small>ms · 后几次中位</small></th>
+        <th data-k="speedup" class="num">加速<small>× · 冷 ÷ 命中</small></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>10 · 方法与复现</h2></div>
+    <div class="card">
+      <div class="mlist" id="mlist"></div>
+      <h3 class="sm">错误类型说明</h3>
+      <div class="tablewrap">
+        <table id="kindtable"><thead><tr><th>类型</th><th>代码</th><th>含义</th></tr></thead><tbody></tbody></table>
+      </div>
+      <h3 class="sm">问题判定规则</h3>
+      <div class="tablewrap">
+        <table id="ruletable"><thead><tr><th>级别</th><th>问题</th><th>判定条件</th></tr></thead><tbody></tbody></table>
+      </div>
+      <pre>curl -s "https://rpc.cryptostack.ai/api/public/chains?limit=500" -o chains_all.json   # 链目录快照
+curl -s "https://rpc.cryptostack.ai/api/public/overview"         -o overview.json     # 路由器概览快照
+python3 classify_chains.py                                        # 分层 → chains_classified.csv
+python3 rpc_bench.py     --chains all --methods all --samples 10  # 常规 + 历史区块可用性
+python3 latency_cache.py --chains all --samples 12 --cache-reps 10 # 稳定延迟 + 缓存冷/热
+python3 build_report.py                                           # 合并结果 → 写入本页</pre>
+    </div>
+  </section>
+
+  <footer>
+    <span id="foot-target"></span>
+    <span id="foot-calls"></span>
+  </footer>
+</div>
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script id="data" type="application/json">{"meta": {"target": "rpc.cryptostack.ai", "date": "2026-10-12 01:55 UTC", "n_chains": 136, "catalog": 2974, "endpoints_active": 578, "bench_calls": 16320, "bench_samples": 10, "latcache_calls": 11152, "lat_samples": 12, "avail_regular": 99.5, "avail_regular_ok": 12175, "avail_regular_total": 12240, "avail_history": 90.9, "avail_history_ok": 3710, "avail_history_total": 4080, "hot_p50": 2, "thresholds": {"slow_cold_ms": 1000, "jitter_ms": 200}}, "error_kinds": {"exhausted": {"label": "上游节点耗尽", "desc": "路由器把该链的上游节点都试过了仍失败:节点宕机、限流或都不支持该请求"}, "no_data": {"label": "上游缺少该区块", "desc": "上游节点只保留近期区块(或非完整历史节点),查不到更早的区块"}, "unsupported": {"label": "上游不支持该方法", "desc": "上游节点没有开放这个 JSON-RPC 方法"}, "rate_limited": {"label": "上游限流", "desc": "请求被上游按频率限制拒绝"}, "timeout": {"label": "请求超时", "desc": "超过超时时间仍未收到响应"}, "conn": {"label": "连接失败", "desc": "与路由器建立连接失败(网络/DNS/TLS)"}, "http": {"label": "HTTP 错误", "desc": "路由器返回了非 200 的 HTTP 状态码"}, "bad_response": {"label": "响应格式异常", "desc": "返回的不是合法的 JSON-RPC 响应"}, "wrong_chain": {"label": "返回了错误的链", "desc": "eth_chainId 返回值与请求的 chainId 不一致"}, "other": {"label": "其他上游错误", "desc": "上游返回了未归类的 JSON-RPC 错误"}}, "tiers": [{"tier": "A-high", "label": "A 高冗余 (≥10)", "count": 8}, {"tier": "B-medium", "label": "B 中 (4–9)", "count": 55}, {"tier": "C-low", "label": "C 低/单点 (≤3)", "count": 73}], "single_point": 11, "methods_avail": [{"name": "eth_chainId", "label": "eth_chainId", "group": "simple", "ok": 1360, "total": 1360, "sr": 100.0}, {"name": "eth_blockNumber", "label": "eth_blockNumber", "group": "simple", "ok": 1360, "total": 1360, "sr": 100.0}, {"name": "net_version", "label": "net_version", "group": "simple", "ok": 1358, "total": 1360, "sr": 99.9}, {"name": "eth_gasPrice", "label": "eth_gasPrice", "group": "simple", "ok": 1360, "total": 1360, "sr": 100.0}, {"name": "web3_clientVersion", "label": "web3_clientVersion", "group": "simple", "ok": 1360, "total": 1360, "sr": 100.0}, {"name": "eth_getBlockByNumber", "label": "eth_getBlockByNumber", "group": "complex", "ok": 1360, "total": 1360, "sr": 100.0}, {"name": "eth_getBalance", "label": "eth_getBalance", "group": "complex", "ok": 1360, "total": 1360, "sr": 100.0}, {"name": "eth_getTransactionCount", "label": "eth_getTransactionCount", "group": "complex", "ok": 1337, "total": 1360, "sr": 98.3}, {"name": "eth_getLogs", "label": "eth_getLogs", "group": "complex", "ok": 1320, "total": 1360, "sr": 97.1}, {"name": "hist_recent", "label": "近期区块 (head−16…128)", "group": "history", "ok": 1329, "total": 1360, "sr": 97.7}, {"name": "hist_mid", "label": "中期区块 (head−5k…20k)", "group": "history", "ok": 1292, "total": 1360, "sr": 95.0}, {"name": "hist_early", "label": "早期区块 (链前 1/4 段)", "group": "history", "ok": 1089, "total": 1360, "sr": 80.1}], "methods_latency": [{"name": "eth_chainId", "p50": 2, "p95": 3, "n": 136}, {"name": "eth_blockNumber", "p50": 2, "p95": 3, "n": 135}, {"name": "eth_gasPrice", "p50": 2, "p95": 3, "n": 135}, {"name": "eth_getBalance", "p50": 3, "p95": 3, "n": 135}, {"name": "eth_getBlockByNumber", "p50": 3, "p95": 4, "n": 135}], "failures": [{"chainId": 30, "name": "Rootstock Mainnet", "method": "eth_getLogs", "group": "complex", "ok": 0, "total": 10, "kind": "unsupported", "msg": "rpc:the method eth_getLogs does not exist/is not available"}, {"chainId": 56, "name": "BNB Smart Chain Mainnet", "method": "eth_getLogs", "group": "complex", "ok": 9, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 56"}, {"chainId": 66, "name": "OKXChain Mainnet", "method": "eth_getTransactionCount", "group": "complex", "ok": 0, "total": 10, "kind": "unsupported", "msg": "rpc:the method eth_getTransactionCount does not exist/is not available"}, {"chainId": 66, "name": "OKXChain Mainnet", "method": "eth_getLogs", "group": "complex", "ok": 1, "total": 10, "kind": "unsupported", "msg": "rpc:the method eth_getLogs does not exist/is not available"}, {"chainId": 369, "name": "PulseChain", "method": "eth_getLogs", "group": "complex", "ok": 9, "total": 10, "kind": "rate_limited", "msg": "rpc:public sample: 50 calls/hour/IP, live state only. Buy an archive seat at https://rpc.levko.io"}, {"chainId": 8822, "name": "IOTA EVM", "method": "eth_getLogs", "group": "complex", "ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 8822"}, {"chainId": 42161, "name": "Arbitrum One", "method": "net_version", "group": "simple", "ok": 8, "total": 10, "kind": "unsupported", "msg": "rpc:the method net_version does not exist/is not available"}, {"chainId": 200901, "name": "Bitlayer Mainnet", "method": "eth_getTransactionCount", "group": "complex", "ok": 7, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 200901"}, {"chainId": 200901, "name": "Bitlayer Mainnet", "method": "eth_getLogs", "group": "complex", "ok": 1, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 200901"}, {"chainId": 728126428, "name": "Tron Mainnet", "method": "eth_getTransactionCount", "group": "complex", "ok": 0, "total": 10, "kind": "unsupported", "msg": "rpc:the method eth_getTransactionCount is rejected as not supported"}], "history": {"depths": [{"id": "hist_recent", "label": "近期区块", "window": "head−16…128", "ok": 1329, "total": 1360, "sr": 97.7, "chains_none": 3, "chains_some": 1, "chains_skipped": 0}, {"id": "hist_mid", "label": "中期区块", "window": "head−5k…20k", "ok": 1292, "total": 1360, "sr": 95.0, "chains_none": 3, "chains_some": 12, "chains_skipped": 0}, {"id": "hist_early", "label": "早期区块", "window": "链前 1/4 段", "ok": 1089, "total": 1360, "sr": 80.1, "chains_none": 19, "chains_some": 23, "chains_skipped": 0}], "rows": [{"chainId": 66, "name": "OKXChain Mainnet", "tier": "C-low", "cells": {"hist_recent": {"ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 66", "skipped": null, "blocks": [47753887, 47753875, 47753923, 47753864, 47753836, 47753855, 47753888, 47753915, 47753942, 47753933]}, "hist_mid": {"ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 66", "skipped": null, "blocks": [47734850, 47748348, 47739518, 47740214, 47741334, 47747080, 47743056, 47738410, 47748459, 47747971]}, "hist_early": {"ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 66", "skipped": null, "blocks": [11460050, 5764955, 9391893, 8840592, 3194382, 1854818, 3405426, 503203, 5191592, 8965232]}}}, {"chainId": 8822, "name": "IOTA EVM", "tier": "C-low", "cells": {"hist_recent": {"ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 8822", "skipped": null, "blocks": [13010994, 13011052, 13010988, 13010993, 13011026, 13010998, 13011042, 13010967, 13011033, 13011022]}, "hist_mid": {"ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 8822", "skipped": null, "blocks": [12998189, 12998508, 13002015, 12997139, 12991682, 13003407, 13000267, 13001508, 12998378, 12998596]}, "hist_early": {"ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 8822", "skipped": null, "blocks": [3111605, 2237171, 2191091, 1509430, 32961, 77979, 1472227, 1080251, 170911, 1481047]}}}, {"chainId": 200901, "name": "Bitlayer Mainnet", "tier": "C-low", "cells": {"hist_recent": {"ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 200901", "skipped": null, "blocks": [26497453, 26497473, 26497537, 26497531, 26497509, 26497514, 26497500, 26497551, 26497509, 26497540]}, "hist_mid": {"ok": 1, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 200901", "skipped": null, "blocks": [26489881, 26492040, 26482860, 26487743, 26492116, 26489811, 26484268, 26482939, 26488338, 26491366]}, "hist_early": {"ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 200901", "skipped": null, "blocks": [357111, 6252767, 2554910, 1818753, 6201712, 6445285, 1601940, 3843969, 3629073, 4740293]}}}, {"chainId": 11155111, "name": "Ethereum Sepolia", "tier": "A-high", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [11895672, 11895682, 11895645, 11895703, 11895625, 11895617, 11895693, 11895622, 11895700, 11895622]}, "hist_mid": {"ok": 0, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [11879131, 11889222, 11878050, 11879876, 11877055, 11890640, 11878952, 11883300, 11880105, 11885852]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [2517682, 2561968, 111903, 2180658, 1493929, 1234018, 1014546, 1482213, 120883, 186835]}}}, {"chainId": 106, "name": "Velas EVM Mainnet", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [70380337, 70380281, 70380256, 70380275, 70380327, 70380300, 70380273, 70380271, 70380358, 70380271]}, "hist_mid": {"ok": 2, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [70373918, 70360614, 70368154, 70363145, 70364704, 70370526, 70367496, 70365126, 70360718, 70374963]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [3059826, 4302007, 16152185, 1822207, 8714642, 12845716, 640484, 4413427, 12981934, 3281513]}}}, {"chainId": 314, "name": "Filecoin - Mainnet", "tier": "B-medium", "cells": {"hist_recent": {"ok": 9, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 314", "skipped": null, "blocks": [6448764, 6448673, 6448714, 6448757, 6448676, 6448731, 6448664, 6448707, 6448659, 6448678]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [6436413, 6434403, 6431043, 6439843, 6441970, 6431945, 6434308, 6435854, 6433694, 6435927]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "rpc:requested block is outside available upstream range", "skipped": null, "blocks": [290926, 138045, 257588, 578436, 712592, 1282501, 663863, 1519072, 121244, 295625]}}}, {"chainId": 10, "name": "OP Mainnet", "tier": "A-high", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [158085581, 158085475, 158085487, 158085545, 158085556, 158085540, 158085542, 158085579, 158085572, 158085526]}, "hist_mid": {"ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [158071804, 158070020, 158079904, 158076895, 158070097, 158071956, 158070209, 158076703, 158073447, 158067304]}, "hist_early": {"ok": 1, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [8251782, 6085585, 37155229, 18161842, 22376903, 36476469, 37675361, 23390084, 36032456, 17710807]}}}, {"chainId": 19, "name": "Songbird Canary-Network", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [135166848, 135166832, 135166794, 135166857, 135166900, 135166904, 135166825, 135166816, 135166803, 135166895]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [135156785, 135159871, 135161581, 135158306, 135160725, 135150623, 135153250, 135152104, 135148497, 135160125]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [29907354, 6091943, 14885785, 27529250, 10507253, 29352833, 13654765, 32430206, 13629325, 14176330]}}}, {"chainId": 29, "name": "Genesis L1", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [13818764, 13818871, 13818814, 13818869, 13818795, 13818822, 13818871, 13818870, 13818780, 13818836]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [13812050, 13807739, 13801282, 13801518, 13806777, 13808979, 13800624, 13810715, 13807788, 13804314]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [2236384, 1249103, 891468, 2730827, 2929046, 2030632, 2165769, 94079, 1868094, 1960299]}}}, {"chainId": 75, "name": "Decimal Smart Chain Mainnet", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [34065507, 34065569, 34065606, 34065589, 34065537, 34065504, 34065515, 34065605, 34065602, 34065509]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [34057740, 34051761, 34051987, 34049365, 34054700, 34045771, 34053811, 34057215, 34047010, 34045708]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [6934821, 3367345, 5900822, 6323194, 8084760, 5166726, 4482484, 4265578, 7584730, 4326821]}}}, {"chainId": 232, "name": "Lens", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [6344777, 6344799, 6344733, 6344709, 6344747, 6344790, 6344755, 6344791, 6344768, 6344724]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [6339272, 6329169, 6336575, 6328016, 6333316, 6339235, 6332828, 6326113, 6327998, 6329913]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [179798, 1316465, 973976, 947300, 265426, 538271, 967080, 1301753, 626139, 1359222]}}}, {"chainId": 324, "name": "zkSync Mainnet", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [72439900, 72439897, 72439948, 72439909, 72439968, 72439868, 72439893, 72439871, 72439890, 72439975]}, "hist_mid": {"ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:Block with such an ID is pruned; the first retained block is 72423826", "skipped": null, "blocks": [72430255, 72429002, 72423432, 72434971, 72422667, 72422452, 72432986, 72426405, 72427816, 72421727]}, "hist_early": {"ok": 1, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [11079132, 16972225, 9560460, 11218053, 13873311, 17164922, 10167877, 14045245, 17657520, 5764565]}}}, {"chainId": 766, "name": "QL1", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [13013851, 13013852, 13013929, 13013843, 13013829, 13013939, 13013873, 13013828, 13013853, 13013903]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [12997759, 12994781, 12996658, 13004063, 13006051, 13002336, 13007802, 12994458, 13005205, 13006741]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [2031631, 1341277, 2507612, 2847031, 1560243, 179310, 3132805, 3049647, 2919539, 1900938]}}}, {"chainId": 1089, "name": "Humans.ai Mainnet", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [18514881, 18514893, 18514860, 18514937, 18514873, 18514865, 18514880, 18514892, 18514921, 18514878]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [18508432, 18497344, 18508402, 18507737, 18501310, 18509584, 18503696, 18505130, 18508368, 18501388]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [1548142, 902125, 2847667, 448041, 1058816, 7658, 674596, 3086286, 4315601, 3467960]}}}, {"chainId": 1100, "name": "Dymension", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [23861336, 23861334, 23861336, 23861331, 23861310, 23861387, 23861385, 23861318, 23861396, 23861419]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [23850045, 23852973, 23843854, 23856409, 23845502, 23853672, 23848201, 23844710, 23852265, 23852723]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [1676171, 2374677, 3447530, 3605067, 4135862, 2355110, 4252060, 4354179, 5016977, 4757307]}}}, {"chainId": 1329, "name": "Sei Network", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [237089009, 237088991, 237088996, 237088988, 237088951, 237089032, 237088975, 237088990, 237089009, 237088958]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [237083424, 237083586, 237077578, 237077219, 237083869, 237083419, 237074469, 237071898, 237075783, 237082115]}, "hist_early": {"ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 1329", "skipped": null, "blocks": [33612943, 56385098, 9001790, 47848611, 41416569, 1846837, 12894017, 44801788, 45656892, 1800018]}}}, {"chainId": 2031, "name": "Centrifuge", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [9818413, 9818472, 9818444, 9818464, 9818472, 9818376, 9818393, 9818369, 9818395, 9818434]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [9812988, 9812493, 9807624, 9802480, 9810830, 9798744, 9808383, 9803917, 9812129, 9809341]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [2216112, 1394515, 361061, 1242353, 201295, 2162002, 137914, 1069649, 150074, 2198870]}}}, {"chainId": 11235, "name": "Haqq Network", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [22779694, 22779707, 22779703, 22779742, 22779668, 22779695, 22779692, 22779751, 22779755, 22779681]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [22761533, 22769235, 22765380, 22762267, 22769013, 22764149, 22762703, 22763307, 22770112, 22768475]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [684860, 272605, 2501584, 2774071, 897115, 2324681, 4847394, 4899450, 3160844, 1114115]}}}, {"chainId": 42262, "name": "Oasis Emerald", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [22380150, 22380112, 22380152, 22380158, 22380091, 22380176, 22380077, 22380103, 22380160, 22380185]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [22362948, 22371082, 22372350, 22370916, 22369045, 22372294, 22362957, 22374010, 22372869, 22371810]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [2593002, 1766145, 1639429, 966946, 3603704, 882546, 2641760, 4531115, 1521764, 1593810]}}}, {"chainId": 48900, "name": "Zircuit Mainnet", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [35916832, 35916807, 35916825, 35916865, 35916873, 35916887, 35916846, 35916870, 35916870, 35916834]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [35908321, 35906868, 35897352, 35897332, 35904061, 35909316, 35909379, 35905709, 35902112, 35908379]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [7842219, 7707200, 6451347, 7075577, 1135293, 8312989, 2607429, 6527629, 5854265, 512231]}}}, {"chainId": 222222, "name": "Hydration", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [15688161, 15688185, 15688185, 15688193, 15688205, 15688179, 15688174, 15688133, 15688223, 15688171]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [15682563, 15682783, 15669951, 15678914, 15669226, 15681722, 15681214, 15674603, 15675688, 15679216]}, "hist_early": {"ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [2600367, 819196, 1723, 1702562, 2098622, 1946696, 3838868, 2145195, 3881428, 1168401]}}}, {"chainId": 25, "name": "Cronos Mainnet", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [99374101, 99374094, 99374054, 99374044, 99374087, 99374008, 99374071, 99374112, 99374087, 99374095]}, "hist_mid": {"ok": 8, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [99368478, 99362447, 99361833, 99355384, 99365205, 99357627, 99364965, 99357692, 99360210, 99368503]}, "hist_early": {"ok": 3, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [6751014, 6209637, 8023998, 16340445, 8738538, 8292286, 2875919, 17897142, 16633214, 17935250]}}}, {"chainId": 58, "name": "Ontology Mainnet", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [20911730, 20911808, 20911699, 20911732, 20911702, 20911794, 20911729, 20911731, 20911804, 20911794]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [20902178, 20894046, 20899975, 20901941, 20903837, 20901125, 20905549, 20899632, 20897173, 20903820]}, "hist_early": {"ok": 3, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 58", "skipped": null, "blocks": [4101396, 1023364, 2032738, 3974579, 578068, 5155890, 1592552, 2460500, 5001015, 566482]}}}, {"chainId": 80094, "name": "Berachain", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [27377519, 27377521, 27377583, 27377611, 27377518, 27377572, 27377525, 27377575, 27377525, 27377592]}, "hist_mid": {"ok": 6, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [27365657, 27361413, 27359989, 27370096, 27366794, 27368686, 27371120, 27365947, 27357693, 27359538]}, "hist_early": {"ok": 7, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [3120703, 5691795, 6809889, 5317361, 3190863, 1014300, 1869237, 4511198, 2999608, 3122027]}}}, {"chainId": 130, "name": "Unichain", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [61021605, 61021530, 61021569, 61021585, 61021587, 61021592, 61021593, 61021586, 61021565, 61021557]}, "hist_mid": {"ok": 5, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [61012877, 61002292, 61002458, 61006310, 61010310, 61014469, 61010786, 61012668, 61010078, 61013619]}, "hist_early": {"ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [6044271, 245510, 10465090, 4040793, 12144795, 7911562, 12995184, 10520571, 1456325, 4410045]}}}, {"chainId": 2222, "name": "Kava", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [22983929, 22983869, 22983926, 22983894, 22983900, 22983910, 22983894, 22983894, 22983934, 22983975]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [22973425, 22972320, 22975115, 22974870, 22966861, 22967620, 22964878, 22975799, 22968701, 22969660]}, "hist_early": {"ok": 4, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [4282741, 801314, 857155, 4306932, 3289402, 3125937, 3089402, 3515248, 4694089, 1379344]}}}, {"chainId": 42220, "name": "Celo Mainnet", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [79869129, 79869196, 79869117, 79869162, 79869167, 79869105, 79869120, 79869141, 79869096, 79869194]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [79853241, 79861010, 79853127, 79855282, 79851277, 79858410, 79851288, 79850867, 79850900, 79861773]}, "hist_early": {"ok": 4, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [5064701, 15286950, 16053305, 19788366, 2347081, 19154872, 11774765, 17507906, 19520825, 5522130]}}}, {"chainId": 146, "name": "Sonic Mainnet", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [80810295, 80810298, 80810297, 80810274, 80810256, 80810233, 80810262, 80810282, 80810248, 80810291]}, "hist_mid": {"ok": 7, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [80791843, 80796744, 80794619, 80792583, 80790656, 80800548, 80790850, 80801128, 80800848, 80790756]}, "hist_early": {"ok": 8, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [9162845, 2389674, 13331311, 15716920, 10972407, 20005148, 17471183, 13362866, 10079042, 8746159]}}}, {"chainId": 728126428, "name": "Tron Mainnet", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [87032282, 87032297, 87032339, 87032266, 87032331, 87032272, 87032258, 87032357, 87032256, 87032303]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [87019688, 87021714, 87022694, 87014528, 87014261, 87017916, 87017881, 87023753, 87025718, 87015583]}, "hist_early": {"ok": 5, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [20232058, 142448, 6214504, 19162425, 1917160, 12242626, 15381929, 8130039, 13995597, 6613001]}}}, {"chainId": 143, "name": "Monad", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [112628529, 112628619, 112628538, 112628610, 112628577, 112628598, 112628605, 112628606, 112628605, 112628537]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [112617178, 112616617, 112612199, 112620273, 112610033, 112611969, 112618413, 112620383, 112619054, 112619625]}, "hist_early": {"ok": 6, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [24128829, 21744477, 7470702, 2003217, 23702738, 9954961, 23151421, 13965985, 12084363, 16662070]}}}, {"chainId": 43114, "name": "Avalanche C-Chain", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [97324484, 97324384, 97324417, 97324411, 97324431, 97324457, 97324382, 97324411, 97324415, 97324383]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [97307943, 97309055, 97305755, 97314872, 97316865, 97316800, 97309442, 97316429, 97311696, 97307933]}, "hist_early": {"ok": 6, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [10538803, 22993461, 14466053, 20748232, 21141246, 12066660, 11332475, 13214104, 887001, 23179165]}}}, {"chainId": 56, "name": "BNB Smart Chain Mainnet", "tier": "A-high", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [127126612, 127126662, 127126594, 127126616, 127126624, 127126611, 127126671, 127126581, 127126602, 127126636]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [127111532, 127111830, 127106931, 127119198, 127110760, 127108952, 127117881, 127109442, 127121209, 127115235]}, "hist_early": {"ok": 7, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [7407013, 11823942, 18692569, 14087627, 28816204, 29662712, 12208803, 14308338, 17384187, 27620657]}}}, {"chainId": 369, "name": "PulseChain", "tier": "A-high", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [27774707, 27774774, 27774688, 27774757, 27774726, 27774795, 27774795, 27774747, 27774710, 27774792]}, "hist_mid": {"ok": 9, "total": 10, "kind": "other", "msg": "rpc:live state only (latest/pending/safe/finalized).", "skipped": null, "blocks": [27760204, 27763426, 27766277, 27762264, 27767500, 27756496, 27757827, 27755649, 27767571, 27755388]}, "hist_early": {"ok": 8, "total": 10, "kind": "other", "msg": "rpc:live state only (latest/pending/safe/finalized).", "skipped": null, "blocks": [5014434, 2591623, 3614221, 5919904, 4419257, 5665151, 6591945, 3406992, 3037197, 5078501]}}}, {"chainId": 59144, "name": "Linea", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [32297355, 32297356, 32297325, 32297345, 32297301, 32297337, 32297312, 32297315, 32297266, 32297296]}, "hist_mid": {"ok": 8, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [32278710, 32283418, 32277438, 32279828, 32279599, 32280565, 32288891, 32278962, 32284744, 32285302]}, "hist_early": {"ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [6809376, 3206714, 3399862, 5001239, 7802518, 3294496, 2920919, 5977662, 3703443, 5992218]}}}, {"chainId": 14, "name": "Flare Mainnet", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [71897092, 71897012, 71897076, 71897014, 71897117, 71897101, 71897019, 71897113, 71897091, 71897044]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [71891011, 71887644, 71885869, 71880068, 71879326, 71890399, 71886775, 71890440, 71884652, 71890246]}, "hist_early": {"ok": 8, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [9841969, 10908524, 5644795, 6431453, 713681, 15801317, 13494152, 14305024, 2754593, 1995014]}}}, {"chainId": 122, "name": "Fuse Mainnet", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [44544428, 44544364, 44544433, 44544397, 44544381, 44544443, 44544450, 44544382, 44544383, 44544390]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [44531764, 44534950, 44530183, 44528371, 44529086, 44534842, 44530837, 44526111, 44524635, 44532339]}, "hist_early": {"ok": 8, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [6773517, 8822013, 3964135, 8235187, 10796964, 2030029, 4551674, 624191, 2010544, 8408097]}}}, {"chainId": 2020, "name": "Ronin", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [62150521, 62150561, 62150537, 62150606, 62150554, 62150594, 62150539, 62150586, 62150544, 62150507]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [62135747, 62131209, 62138246, 62139721, 62131815, 62139272, 62139618, 62132485, 62135823, 62133712]}, "hist_early": {"ok": 8, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [6395924, 1244462, 4959629, 6920497, 7789134, 6498353, 2509403, 956865, 13679783, 11391810]}}}, {"chainId": 42161, "name": "Arbitrum One", "tier": "A-high", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [513983223, 513983137, 513983204, 513983157, 513983244, 513983226, 513983185, 513983232, 513983152, 513983146]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [513969779, 513970873, 513968543, 513968766, 513967425, 513971814, 513965042, 513964317, 513969072, 513975191]}, "hist_early": {"ok": 8, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [122437380, 42169610, 124130351, 74923985, 52842755, 72546487, 6036049, 108882799, 91530070, 81474966]}}}, {"chainId": 100, "name": "Gnosis", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [48710848, 48710857, 48710825, 48710839, 48710862, 48710804, 48710861, 48710772, 48710785, 48710834]}, "hist_mid": {"ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [48696840, 48696408, 48693539, 48699386, 48699492, 48705864, 48704892, 48701278, 48696954, 48704175]}, "hist_early": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [10044962, 6878360, 6178942, 1736963, 7684154, 2657752, 3832054, 3182688, 10556103, 11607310]}}}, {"chainId": 137, "name": "Polygon Mainnet", "tier": "A-high", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [95376451, 95376425, 95376345, 95376388, 95376413, 95376377, 95376378, 95376418, 95376354, 95376352]}, "hist_mid": {"ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [95356543, 95359047, 95367839, 95361824, 95361710, 95358266, 95362195, 95371004, 95358851, 95369186]}, "hist_early": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [23319322, 12336107, 8936212, 11180042, 217923, 10922009, 669538, 372373, 22198620, 21734878]}}}, {"chainId": 250, "name": "Fantom Opera", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [123651518, 123651560, 123651565, 123651545, 123651531, 123651599, 123651510, 123651530, 123651591, 123651610]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [123638621, 123636018, 123633317, 123639698, 123644379, 123644466, 123643200, 123636702, 123641781, 123643383]}, "hist_early": {"ok": 9, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [16621616, 5864599, 874852, 23886551, 2724406, 18378059, 20287231, 5537216, 8883565, 6857293]}}}, {"chainId": 787, "name": "Acala Network", "tier": "C-low", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [12191784, 12191792, 12191791, 12191866, 12191786, 12191867, 12191808, 12191881, 12191820, 12191816]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [12185994, 12182232, 12173444, 12185246, 12180410, 12176752, 12185807, 12185122, 12182280, 12179386]}, "hist_early": {"ok": 9, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 787", "skipped": null, "blocks": [1636704, 1834731, 703120, 1353867, 1438063, 2241588, 64991, 417682, 2346157, 59879]}}}, {"chainId": 8217, "name": "Kaia Mainnet", "tier": "B-medium", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [229567362, 229567392, 229567380, 229567398, 229567351, 229567343, 229567351, 229567372, 229567415, 229567333]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [229557770, 229554452, 229560128, 229555578, 229553484, 229559501, 229557316, 229553318, 229554057, 229550784]}, "hist_early": {"ok": 9, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)", "skipped": null, "blocks": [32242639, 7411334, 49949204, 36114022, 25691543, 45172139, 9874858, 44863603, 8559990, 31888664]}}}, {"chainId": 8453, "name": "Base", "tier": "A-high", "cells": {"hist_recent": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [52490272, 52490207, 52490263, 52490236, 52490209, 52490236, 52490223, 52490248, 52490280, 52490234]}, "hist_mid": {"ok": 10, "total": 10, "kind": null, "msg": null, "skipped": null, "blocks": [52479020, 52479902, 52473646, 52473570, 52474894, 52479195, 52474837, 52483038, 52478900, 52476867]}, "hist_early": {"ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.", "skipped": null, "blocks": [2288360, 4542331, 6651294, 10880116, 2890940, 8302623, 1574046, 2341111, 10003411, 6188882]}}}]}, "cache_summary": {"cold_p50": 195, "warm_p50": 3, "speedup_med": 78.2, "benefit": 135, "benefit_x": 1.3, "n": 135, "n_total": 136, "n_cold_fail": 1, "reps": 11}, "cache_top": [{"chainId": 34443, "name": "Mode", "cold": 751, "warm": 3, "speedup": 292.0}, {"chainId": 254, "name": "Swan Chain Mainnet", "cold": 506, "warm": 2, "speedup": 243.3}, {"chainId": 250, "name": "Fantom Opera", "cold": 553, "warm": 2, "speedup": 228.1}, {"chainId": 787, "name": "Acala Network", "cold": 555, "warm": 3, "speedup": 214.9}, {"chainId": 1101, "name": "Polygon zkEVM", "cold": 367, "warm": 2, "speedup": 163.9}, {"chainId": 130, "name": "Unichain", "cold": 337, "warm": 2, "speedup": 163.7}, {"chainId": 1666600001, "name": "Harmony Mainnet Shard 1", "cold": 340, "warm": 2, "speedup": 161.2}, {"chainId": 2020, "name": "Ronin", "cold": 308, "warm": 2, "speedup": 158.3}, {"chainId": 232, "name": "Lens", "cold": 332, "warm": 2, "speedup": 156.2}, {"chainId": 122, "name": "Fuse Mainnet", "cold": 469, "warm": 3, "speedup": 148.6}, {"chainId": 728126428, "name": "Tron Mainnet", "cold": 416, "warm": 3, "speedup": 145.1}, {"chainId": 42220, "name": "Celo Mainnet", "cold": 449, "warm": 3, "speedup": 145.0}], "cache_fail": [{"chainId": 480, "name": "World Chain", "block": 36216749, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 480", "fail_ms": 1115, "retry_call": 2, "retry_ms": 183, "ok": 10, "reps": 11}], "jitter_top": [{"chainId": 61, "name": "Ethereum Classic", "jitter": 1582, "p50": 2, "p95": 2}, {"chainId": 592, "name": "Astar", "jitter": 1444, "p50": 3, "p95": 65}, {"chainId": 10000, "name": "Smart Bitcoin Cash", "jitter": 1442, "p50": 3, "p95": 3}, {"chainId": 109, "name": "Shibarium", "jitter": 659, "p50": 2, "p95": 2}, {"chainId": 274, "name": "LaChain", "jitter": 523, "p50": 2, "p95": 2}, {"chainId": 813, "name": "Qitmeer Network Mainnet", "jitter": 485, "p50": 3, "p95": 5}, {"chainId": 8, "name": "c8ntinuum", "jitter": 467, "p50": 2, "p95": 233}, {"chainId": 295, "name": "Hedera Mainnet", "jitter": 411, "p50": 3, "p95": 4}, {"chainId": 223, "name": "B2 Mainnet", "jitter": 361, "p50": 2, "p95": 645}, {"chainId": 1135, "name": "Lisk", "jitter": 347, "p50": 2, "p95": 3}], "issue_rows": [{"chainId": 200901, "name": "Bitlayer Mainnet", "tier": "C-low", "active": 1, "issues": [{"code": "history_missing", "level": "crit", "label": "历史区块查不到", "detail": "近期区块 (head−16…128) 0/10、早期区块 (链前 1/4 段) 0/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 200901"}, {"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getTransactionCount 7/10、eth_getLogs 1/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 200901"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 1/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 200901"}]}, {"chainId": 66, "name": "OKXChain Mainnet", "tier": "C-low", "active": 2, "issues": [{"code": "history_missing", "level": "crit", "label": "历史区块查不到", "detail": "近期区块 (head−16…128) 0/10、中期区块 (head−5k…20k) 0/10、早期区块 (链前 1/4 段) 0/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 66"}, {"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getTransactionCount 0/10 —— 上游不支持该方法：rpc:the method eth_getTransactionCount does not exist/is not available；eth_getLogs 1/10 —— 上游不支持该方法：rpc:the method eth_getLogs does not exist/is not available"}]}, {"chainId": 8822, "name": "IOTA EVM", "tier": "C-low", "active": 2, "issues": [{"code": "history_missing", "level": "crit", "label": "历史区块查不到", "detail": "近期区块 (head−16…128) 0/10、中期区块 (head−5k…20k) 0/10、早期区块 (链前 1/4 段) 0/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 8822"}, {"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getLogs 0/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 8822"}]}, {"chainId": 56, "name": "BNB Smart Chain Mainnet", "tier": "A-high", "active": 28, "issues": [{"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getLogs 9/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 56"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 7/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 106, "name": "Velas EVM Mainnet", "tier": "C-low", "active": 2, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 2/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 314, "name": "Filecoin - Mainnet", "tier": "B-medium", "active": 5, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：rpc:requested block is outside available upstream range"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "近期区块 (head−16…128) 9/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 314"}]}, {"chainId": 369, "name": "PulseChain", "tier": "A-high", "active": 10, "issues": [{"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getLogs 9/10 —— 上游限流：rpc:public sample: 50 calls/hour/IP, live state only. Buy an archive seat at https://rpc.levko.io"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 9/10、早期区块 (链前 1/4 段) 8/10 —— 其他上游错误：rpc:live state only (latest/pending/safe/finalized)."}]}, {"chainId": 42161, "name": "Arbitrum One", "tier": "A-high", "active": 10, "issues": [{"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "net_version 8/10 —— 上游不支持该方法：rpc:the method net_version does not exist/is not available"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 8/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}]}, {"chainId": 728126428, "name": "Tron Mainnet", "tier": "B-medium", "active": 4, "issues": [{"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getTransactionCount 0/10 —— 上游不支持该方法：rpc:the method eth_getTransactionCount is rejected as not supported"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 5/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 10, "name": "OP Mainnet", "tier": "A-high", "active": 11, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.；早期区块 (链前 1/4 段) 1/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 14, "name": "Flare Mainnet", "tier": "B-medium", "active": 4, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 8/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 19, "name": "Songbird Canary-Network", "tier": "C-low", "active": 2, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 25, "name": "Cronos Mainnet", "tier": "B-medium", "active": 5, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 8/10、早期区块 (链前 1/4 段) 3/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}]}, {"chainId": 29, "name": "Genesis L1", "tier": "B-medium", "active": 6, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 30, "name": "Rootstock Mainnet", "tier": "C-low", "active": 3, "issues": [{"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getLogs 0/10 —— 上游不支持该方法：rpc:the method eth_getLogs does not exist/is not available"}]}, {"chainId": 58, "name": "Ontology Mainnet", "tier": "B-medium", "active": 4, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 3/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 58"}]}, {"chainId": 75, "name": "Decimal Smart Chain Mainnet", "tier": "B-medium", "active": 5, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 100, "name": "Gnosis", "tier": "B-medium", "active": 8, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}]}, {"chainId": 122, "name": "Fuse Mainnet", "tier": "B-medium", "active": 4, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 8/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 130, "name": "Unichain", "tier": "B-medium", "active": 4, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 5/10、早期区块 (链前 1/4 段) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}]}, {"chainId": 137, "name": "Polygon Mainnet", "tier": "A-high", "active": 10, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}]}, {"chainId": 143, "name": "Monad", "tier": "B-medium", "active": 9, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 6/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 146, "name": "Sonic Mainnet", "tier": "B-medium", "active": 7, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 7/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.；早期区块 (链前 1/4 段) 8/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 232, "name": "Lens", "tier": "C-low", "active": 2, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 250, "name": "Fantom Opera", "tier": "B-medium", "active": 6, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 9/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 324, "name": "zkSync Mainnet", "tier": "B-medium", "active": 5, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 9/10 —— 上游缺少该区块：rpc:Block with such an ID is pruned; the first retained block is 72423826；早期区块 (链前 1/4 段) 1/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 480, "name": "World Chain", "tier": "B-medium", "active": 5, "issues": [{"code": "cold_fail", "level": "warn", "label": "首次请求失败", "detail": "缓存测试第 1 次请求失败(上游节点耗尽，耗时 1115 ms：rpc:rpcrouter: all upstream endpoints exhausted for chain 480)，第 2 次才成功(183 ms)——路由器遇到这个错误没有自动换上游重试"}]}, {"chainId": 766, "name": "QL1", "tier": "C-low", "active": 2, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 787, "name": "Acala Network", "tier": "C-low", "active": 1, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 9/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 787"}]}, {"chainId": 1089, "name": "Humans.ai Mainnet", "tier": "C-low", "active": 1, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 1100, "name": "Dymension", "tier": "C-low", "active": 2, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 1329, "name": "Sei Network", "tier": "C-low", "active": 2, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 1329"}]}, {"chainId": 2020, "name": "Ronin", "tier": "C-low", "active": 3, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 8/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 2031, "name": "Centrifuge", "tier": "C-low", "active": 2, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 2222, "name": "Kava", "tier": "B-medium", "active": 6, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 4/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 8217, "name": "Kaia Mainnet", "tier": "B-medium", "active": 5, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 9/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 8453, "name": "Base", "tier": "A-high", "active": 12, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}]}, {"chainId": 11235, "name": "Haqq Network", "tier": "B-medium", "active": 4, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 42220, "name": "Celo Mainnet", "tier": "B-medium", "active": 4, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 4/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 42262, "name": "Oasis Emerald", "tier": "C-low", "active": 1, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 43114, "name": "Avalanche C-Chain", "tier": "B-medium", "active": 8, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 6/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}]}, {"chainId": 48900, "name": "Zircuit Mainnet", "tier": "C-low", "active": 2, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 59144, "name": "Linea", "tier": "B-medium", "active": 6, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 8/10、早期区块 (链前 1/4 段) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}]}, {"chainId": 80094, "name": "Berachain", "tier": "B-medium", "active": 7, "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 6/10、早期区块 (链前 1/4 段) 7/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}]}, {"chainId": 222222, "name": "Hydration", "tier": "C-low", "active": 3, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}]}, {"chainId": 11155111, "name": "Ethereum Sepolia", "tier": "A-high", "active": 10, "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "中期区块 (head−5k…20k) 0/10、早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}]}], "issue_counts": {"jitter": 18, "history_flaky": 28, "history_missing": 19, "regular_fail": 8, "single_point": 11, "cold_fail": 1}, "issue_meta": {"jitter": {"label": "延迟抖动大", "level": "info"}, "history_flaky": {"label": "历史区块偶发失败", "level": "warn"}, "history_missing": {"label": "历史区块查不到", "level": "warn"}, "regular_fail": {"label": "常规请求失败", "level": "warn"}, "single_point": {"label": "单点", "level": "info"}, "cold_fail": {"label": "首次请求失败", "level": "warn"}}, "all_chains": [{"chainId": 1, "name": "Ethereum Mainnet", "sym": "ETH", "tier": "A-high", "active": 30, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 17, "warm": 2, "speedup": 7.6, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 8, "name": "c8ntinuum", "sym": "CTM", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 218, "warm": 2, "speedup": 87.9, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 467 ms"}], "level": 2}, {"chainId": 10, "name": "OP Mainnet", "sym": "ETH", "tier": "A-high", "active": 11, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 4, "cold": 258, "warm": 2, "speedup": 124.1, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}, {"label": "早期区块 (链前 1/4 段)", "ok": 1, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.；早期区块 (链前 1/4 段) 1/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 14, "name": "Flare Mainnet", "sym": "FLR", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 93.3, "p50": 4, "cold": 322, "warm": 2, "speedup": 142.5, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 8, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 8/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 19, "name": "Songbird Canary-Network", "sym": "SGB", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 2, "cold": 323, "warm": 3, "speedup": 126.3, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 20, "name": "Elastos Smart Chain", "sym": "ELA", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 201, "warm": 2, "speedup": 88.5, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 25, "name": "Cronos Mainnet", "sym": "CRO", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 70.0, "p50": 4, "cold": 203, "warm": 2, "speedup": 82.2, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 8, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}, {"label": "早期区块 (链前 1/4 段)", "ok": 3, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 8/10、早期区块 (链前 1/4 段) 3/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "level": 1}, {"chainId": 29, "name": "Genesis L1", "sym": "L1", "tier": "B-medium", "active": 6, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 3, "cold": 285, "warm": 3, "speedup": 99.5, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}, {"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 248 ms"}], "level": 1}, {"chainId": 30, "name": "Rootstock Mainnet", "sym": "RBTC", "tier": "C-low", "active": 3, "sp": false, "avail": 88.9, "havail": 100.0, "p50": 2, "cold": 349, "warm": 3, "speedup": 139.0, "coldf": null, "hfail": [], "issues": [{"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getLogs 0/10 —— 上游不支持该方法：rpc:the method eth_getLogs does not exist/is not available"}], "level": 1}, {"chainId": 40, "name": "Telos EVM Mainnet", "sym": "TLOS", "tier": "C-low", "active": 1, "sp": true, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 168, "warm": 3, "speedup": 63.4, "coldf": null, "hfail": [], "issues": [{"code": "single_point", "level": "info", "label": "单点", "detail": "只有 1 个活跃上游节点"}], "level": 2}, {"chainId": 42, "name": "LUKSO Mainnet", "sym": "LYX", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 229, "warm": 3, "speedup": 76.2, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 46, "name": "Darwinia Network", "sym": "RING", "tier": "C-low", "active": 1, "sp": true, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 239, "warm": 2, "speedup": 108.1, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 249 ms"}, {"code": "single_point", "level": "info", "label": "单点", "detail": "只有 1 个活跃上游节点"}], "level": 2}, {"chainId": 50, "name": "XDC Network", "sym": "XDC", "tier": "B-medium", "active": 8, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 253, "warm": 3, "speedup": 91.1, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 51, "name": "XDC Apothem Network", "sym": "TXDC", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 231, "warm": 3, "speedup": 76.9, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 240 ms"}], "level": 2}, {"chainId": 56, "name": "BNB Smart Chain Mainnet", "sym": "BNB", "tier": "A-high", "active": 28, "sp": false, "avail": 98.9, "havail": 90.0, "p50": 3, "cold": 308, "warm": 3, "speedup": 111.6, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 7, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getLogs 9/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 56"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 7/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 57, "name": "Syscoin Mainnet", "sym": "SYS", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 217, "warm": 2, "speedup": 101.9, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 220 ms"}], "level": 2}, {"chainId": 58, "name": "Ontology Mainnet", "sym": "ONG", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 76.7, "p50": 2, "cold": 7, "warm": 3, "speedup": 2.5, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 3, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 58"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 3/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 58"}], "level": 1}, {"chainId": 61, "name": "Ethereum Classic", "sym": "ETC", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 180, "warm": 2, "speedup": 74.3, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 1582 ms"}], "level": 2}, {"chainId": 66, "name": "OKXChain Mainnet", "sym": "OKT", "tier": "C-low", "active": 2, "sp": false, "avail": 78.9, "havail": 0.0, "p50": 2, "cold": 57, "warm": 2, "speedup": 25.2, "coldf": null, "hfail": [{"label": "近期区块 (head−16…128)", "ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 66"}, {"label": "中期区块 (head−5k…20k)", "ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 66"}, {"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 66"}], "issues": [{"code": "history_missing", "level": "crit", "label": "历史区块查不到", "detail": "近期区块 (head−16…128) 0/10、中期区块 (head−5k…20k) 0/10、早期区块 (链前 1/4 段) 0/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 66"}, {"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getTransactionCount 0/10 —— 上游不支持该方法：rpc:the method eth_getTransactionCount does not exist/is not available；eth_getLogs 1/10 —— 上游不支持该方法：rpc:the method eth_getLogs does not exist/is not available"}], "level": 0}, {"chainId": 75, "name": "Decimal Smart Chain Mainnet", "sym": "DEL", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 3, "cold": 209, "warm": 2, "speedup": 95.5, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 81, "name": "Japan Open Chain Mainnet", "sym": "JOC", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 73, "warm": 3, "speedup": 24.3, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 100, "name": "Gnosis", "sym": "XDAI", "tier": "B-medium", "active": 8, "sp": false, "avail": 100.0, "havail": 96.7, "p50": 2, "cold": 220, "warm": 2, "speedup": 103.8, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "level": 1}, {"chainId": 106, "name": "Velas EVM Mainnet", "sym": "VLX", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 40.0, "p50": 3, "cold": 220, "warm": 2, "speedup": 102.0, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 2, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}, {"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 2/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 109, "name": "Shibarium", "sym": "BONE", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 180, "warm": 3, "speedup": 59.6, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 659 ms"}], "level": 2}, {"chainId": 122, "name": "Fuse Mainnet", "sym": "FUSE", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 93.3, "p50": 2, "cold": 469, "warm": 3, "speedup": 148.6, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 8, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 8/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 130, "name": "Unichain", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 80.0, "p50": 3, "cold": 337, "warm": 2, "speedup": 163.7, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 5, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}, {"label": "早期区块 (链前 1/4 段)", "ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 5/10、早期区块 (链前 1/4 段) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "level": 1}, {"chainId": 137, "name": "Polygon Mainnet", "sym": "POL", "tier": "A-high", "active": 10, "sp": false, "avail": 100.0, "havail": 96.7, "p50": 2, "cold": 221, "warm": 3, "speedup": 78.2, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "level": 1}, {"chainId": 138, "name": "Defi Oracle Meta Mainnet", "sym": "ETH", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 272, "warm": 2, "speedup": 123.6, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 143, "name": "Monad", "sym": "MON", "tier": "B-medium", "active": 9, "sp": false, "avail": 100.0, "havail": 86.7, "p50": 2, "cold": 35, "warm": 3, "speedup": 12.4, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 6, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 6/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 146, "name": "Sonic Mainnet", "sym": "S", "tier": "B-medium", "active": 7, "sp": false, "avail": 100.0, "havail": 83.3, "p50": 3, "cold": 191, "warm": 3, "speedup": 62.6, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 7, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}, {"label": "早期区块 (链前 1/4 段)", "ok": 8, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 7/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access.；早期区块 (链前 1/4 段) 8/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 169, "name": "Manta Pacific Mainnet", "sym": "ETH", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 223, "warm": 2, "speedup": 90.1, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 173, "name": "ENI Mainnet", "sym": "EGAS", "tier": "B-medium", "active": 6, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 75, "warm": 3, "speedup": 27.5, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 196, "name": "X Layer Mainnet", "sym": "OKB", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 50, "warm": 2, "speedup": 24.5, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 199, "name": "BitTorrent Chain Mainnet", "sym": "BTT", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 314, "warm": 3, "speedup": 110.2, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 204, "name": "opBNB Mainnet", "sym": "BNB", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 218, "warm": 3, "speedup": 73.5, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 223, "name": "B2 Mainnet", "sym": "BTC", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 188, "warm": 3, "speedup": 69.8, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 361 ms"}], "level": 2}, {"chainId": 232, "name": "Lens", "sym": "GHO", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 3, "cold": 332, "warm": 2, "speedup": 156.2, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 239, "name": "TAC Mainnet", "sym": "TAC", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 187, "warm": 2, "speedup": 96.1, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 250, "name": "Fantom Opera", "sym": "FTM", "tier": "B-medium", "active": 6, "sp": false, "avail": 100.0, "havail": 96.7, "p50": 2, "cold": 553, "warm": 2, "speedup": 228.1, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 9, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 9/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 252, "name": "Fraxtal", "sym": "FRAX", "tier": "B-medium", "active": 6, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 194, "warm": 3, "speedup": 72.1, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 254, "name": "Swan Chain Mainnet", "sym": "ETH", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 506, "warm": 2, "speedup": 243.3, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 274, "name": "LaChain", "sym": "LAC", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 270, "warm": 3, "speedup": 97.1, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 523 ms"}], "level": 2}, {"chainId": 288, "name": "Boba Network", "sym": "ETH", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 259, "warm": 2, "speedup": 115.1, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 295, "name": "Hedera Mainnet", "sym": "HBAR", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 236, "warm": 2, "speedup": 96.8, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 411 ms"}], "level": 2}, {"chainId": 314, "name": "Filecoin - Mainnet", "sym": "FIL", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 63.3, "p50": 3, "cold": 8, "warm": 3, "speedup": 3.2, "coldf": null, "hfail": [{"label": "近期区块 (head−16…128)", "ok": 9, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 314"}, {"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "rpc:requested block is outside available upstream range"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：rpc:requested block is outside available upstream range"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "近期区块 (head−16…128) 9/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 314"}], "level": 1}, {"chainId": 321, "name": "KCC Mainnet", "sym": "KCS", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 134, "warm": 2, "speedup": 54.0, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 324, "name": "zkSync Mainnet", "sym": "ETH", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 3, "cold": 208, "warm": 2, "speedup": 103.2, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:Block with such an ID is pruned; the first retained block is 72423826"}, {"label": "早期区块 (链前 1/4 段)", "ok": 1, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 9/10 —— 上游缺少该区块：rpc:Block with such an ID is pruned; the first retained block is 72423826；早期区块 (链前 1/4 段) 1/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}, {"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 295 ms"}], "level": 1}, {"chainId": 369, "name": "PulseChain", "sym": "PLS", "tier": "A-high", "active": 10, "sp": false, "avail": 98.9, "havail": 90.0, "p50": 2, "cold": 205, "warm": 3, "speedup": 72.2, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 9, "total": 10, "kind": "other", "msg": "rpc:live state only (latest/pending/safe/finalized)."}, {"label": "早期区块 (链前 1/4 段)", "ok": 8, "total": 10, "kind": "other", "msg": "rpc:live state only (latest/pending/safe/finalized)."}], "issues": [{"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getLogs 9/10 —— 上游限流：rpc:public sample: 50 calls/hour/IP, live state only. Buy an archive seat at https://rpc.levko.io"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 9/10、早期区块 (链前 1/4 段) 8/10 —— 其他上游错误：rpc:live state only (latest/pending/safe/finalized)."}, {"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 265 ms"}], "level": 1}, {"chainId": 388, "name": "Cronos zkEVM Mainnet", "sym": "zkCRO", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 326, "warm": 3, "speedup": 121.6, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 463, "name": "Areum Mainnet", "sym": "AREA", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 184, "warm": 2, "speedup": 77.5, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 480, "name": "World Chain", "sym": "ETH", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": null, "warm": 3, "speedup": null, "coldf": {"kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 480", "ms": 1115, "retry_call": 2, "retry_ms": 183}, "hfail": [], "issues": [{"code": "cold_fail", "level": "warn", "label": "首次请求失败", "detail": "缓存测试第 1 次请求失败(上游节点耗尽，耗时 1115 ms：rpc:rpcrouter: all upstream endpoints exhausted for chain 480)，第 2 次才成功(183 ms)——路由器遇到这个错误没有自动换上游重试"}], "level": 1}, {"chainId": 520, "name": "XT Smart Chain Mainnet", "sym": "XT", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 52, "warm": 3, "speedup": 20.2, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 570, "name": "Rollux Mainnet", "sym": "SYS", "tier": "C-low", "active": 1, "sp": true, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 198, "warm": 3, "speedup": 64.6, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 213 ms"}, {"code": "single_point", "level": "info", "label": "单点", "detail": "只有 1 个活跃上游节点"}], "level": 2}, {"chainId": 592, "name": "Astar", "sym": "ASTR", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 80, "warm": 2, "speedup": 32.1, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 1444 ms"}], "level": 2}, {"chainId": 686, "name": "Karura Network", "sym": "KAR", "tier": "C-low", "active": 1, "sp": true, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 193, "warm": 2, "speedup": 83.8, "coldf": null, "hfail": [], "issues": [{"code": "single_point", "level": "info", "label": "单点", "detail": "只有 1 个活跃上游节点"}], "level": 2}, {"chainId": 766, "name": "QL1", "sym": "QOM", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 2, "cold": 266, "warm": 2, "speedup": 110.2, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 787, "name": "Acala Network", "sym": "ACA", "tier": "C-low", "active": 1, "sp": true, "avail": 100.0, "havail": 96.7, "p50": 2, "cold": 555, "warm": 3, "speedup": 214.9, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 9, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 787"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 9/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 787"}, {"code": "single_point", "level": "info", "label": "单点", "detail": "只有 1 个活跃上游节点"}], "level": 1}, {"chainId": 813, "name": "Qitmeer Network Mainnet", "sym": "MEER", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 72, "warm": 3, "speedup": 27.5, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 485 ms"}], "level": 2}, {"chainId": 988, "name": "Stable Mainnet", "sym": "USDT0", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 204, "warm": 3, "speedup": 78.9, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 999, "name": "HyperEVM", "sym": "HYPE", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 19, "warm": 3, "speedup": 7.2, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1009, "name": "Jumbochain Mainnet", "sym": "JNFTC", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 58, "warm": 3, "speedup": 21.9, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1088, "name": "Metis Andromeda Mainnet", "sym": "METIS", "tier": "B-medium", "active": 6, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 233, "warm": 3, "speedup": 92.5, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1089, "name": "Humans.ai Mainnet", "sym": "HEART", "tier": "C-low", "active": 1, "sp": true, "avail": 100.0, "havail": 66.7, "p50": 3, "cold": 171, "warm": 2, "speedup": 81.7, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}, {"code": "single_point", "level": "info", "label": "单点", "detail": "只有 1 个活跃上游节点"}], "level": 1}, {"chainId": 1100, "name": "Dymension", "sym": "DYM", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 2, "cold": 215, "warm": 3, "speedup": 65.6, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 1101, "name": "Polygon zkEVM", "sym": "ETH", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 367, "warm": 2, "speedup": 163.9, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1116, "name": "Core Blockchain Mainnet", "sym": "CORE", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 187, "warm": 3, "speedup": 66.8, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1135, "name": "Lisk", "sym": "ETH", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 316, "warm": 3, "speedup": 116.8, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 347 ms"}], "level": 2}, {"chainId": 1284, "name": "Moonbeam", "sym": "GLMR", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 107, "warm": 2, "speedup": 44.1, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1285, "name": "Moonriver", "sym": "MOVR", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 108, "warm": 2, "speedup": 46.6, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1287, "name": "Moonbase Alpha", "sym": "DEV", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 4, "cold": 293, "warm": 3, "speedup": 113.3, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1319, "name": "AIA Mainnet", "sym": "AIA", "tier": "B-medium", "active": 6, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 4, "cold": 11, "warm": 2, "speedup": 5.7, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1329, "name": "Sei Network", "sym": "SEI", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 66.7, "p50": null, "cold": 86, "warm": 2, "speedup": 34.9, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 1329"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 1329"}], "level": 1}, {"chainId": 1514, "name": "Data Network", "sym": "DATA", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 116, "warm": 3, "speedup": 36.8, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1868, "name": "Soneium", "sym": "ETH", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 181, "warm": 3, "speedup": 71.7, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 2020, "name": "Ronin", "sym": "RON", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 93.3, "p50": 3, "cold": 308, "warm": 2, "speedup": 158.3, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 8, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 8/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 2031, "name": "Centrifuge", "sym": "CFG", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 2, "cold": 163, "warm": 2, "speedup": 68.1, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 2222, "name": "Kava", "sym": "KAVA", "tier": "B-medium", "active": 6, "sp": false, "avail": 100.0, "havail": 80.0, "p50": 2, "cold": 272, "warm": 2, "speedup": 120.6, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 4, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 4/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 2340, "name": "Atleta Olympia", "sym": "ATLA", "tier": "C-low", "active": 1, "sp": true, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 244, "warm": 2, "speedup": 97.9, "coldf": null, "hfail": [], "issues": [{"code": "single_point", "level": "info", "label": "单点", "detail": "只有 1 个活跃上游节点"}], "level": 2}, {"chainId": 2440, "name": "Atleta Network", "sym": "ATLA", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 194, "warm": 2, "speedup": 91.0, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 2741, "name": "Abstract", "sym": "ETH", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 311, "warm": 2, "speedup": 128.7, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 2818, "name": "Morph", "sym": "ETH", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 156, "warm": 2, "speedup": 63.4, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 2999, "name": "BitYuan Mainnet", "sym": "BTY", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 5, "warm": 2, "speedup": 2.2, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 3338, "name": "peaq", "sym": "PEAQ", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 116, "warm": 3, "speedup": 43.6, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 3797, "name": "AlveyChain Mainnet", "sym": "ALV", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 12, "warm": 2, "speedup": 5.4, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 4200, "name": "Merlin Mainnet", "sym": "BTC", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 15, "warm": 2, "speedup": 6.8, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 4326, "name": "MegaETH", "sym": "ETH", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 22, "warm": 3, "speedup": 7.9, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 4663, "name": "Robinhood Chain", "sym": "ETH", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 195, "warm": 2, "speedup": 82.4, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 4689, "name": "IoTeX Network Mainnet", "sym": "IOTX", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 208, "warm": 4, "speedup": 52.9, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 5000, "name": "Mantle", "sym": "MNT", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 193, "warm": 4, "speedup": 51.8, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 5042, "name": "Arc", "sym": "USDC", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 4, "cold": 170, "warm": 3, "speedup": 52.3, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 6999, "name": "PolySmartChain", "sym": "PSC", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 112, "warm": 3, "speedup": 42.1, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 7000, "name": "ZetaChain Mainnet", "sym": "ZETA", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 182, "warm": 2, "speedup": 75.7, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 8217, "name": "Kaia Mainnet", "sym": "KAIA", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 96.7, "p50": 2, "cold": 100, "warm": 3, "speedup": 31.0, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 9, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 9/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 8453, "name": "Base", "sym": "ETH", "tier": "A-high", "active": 12, "sp": false, "avail": 100.0, "havail": 96.7, "p50": 3, "cold": 203, "warm": 3, "speedup": 80.8, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "level": 1}, {"chainId": 8822, "name": "IOTA EVM", "sym": "IOTA", "tier": "C-low", "active": 2, "sp": false, "avail": 88.9, "havail": 0.0, "p50": 3, "cold": 11, "warm": 2, "speedup": 4.8, "coldf": null, "hfail": [{"label": "近期区块 (head−16…128)", "ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 8822"}, {"label": "中期区块 (head−5k…20k)", "ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 8822"}, {"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 8822"}], "issues": [{"code": "history_missing", "level": "crit", "label": "历史区块查不到", "detail": "近期区块 (head−16…128) 0/10、中期区块 (head−5k…20k) 0/10、早期区块 (链前 1/4 段) 0/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 8822"}, {"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getLogs 0/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 8822"}], "level": 0}, {"chainId": 8880, "name": "Unique", "sym": "UNQ", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 169, "warm": 2, "speedup": 72.8, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 9745, "name": "Plasma Mainnet", "sym": "XPL", "tier": "C-low", "active": 1, "sp": true, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 159, "warm": 2, "speedup": 76.2, "coldf": null, "hfail": [], "issues": [{"code": "single_point", "level": "info", "label": "单点", "detail": "只有 1 个活跃上游节点"}], "level": 2}, {"chainId": 10000, "name": "Smart Bitcoin Cash", "sym": "BCH", "tier": "C-low", "active": 1, "sp": true, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 219, "warm": 3, "speedup": 82.4, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 1442 ms"}, {"code": "single_point", "level": "info", "label": "单点", "detail": "只有 1 个活跃上游节点"}], "level": 2}, {"chainId": 11235, "name": "Haqq Network", "sym": "ISLM", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 2, "cold": 185, "warm": 2, "speedup": 98.0, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 12306, "name": "Fibonacci Mainnet", "sym": "FIBO", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 61, "warm": 2, "speedup": 30.3, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 13371, "name": "Immutable zkEVM", "sym": "IMX", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 362, "warm": 3, "speedup": 135.5, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 24734, "name": "MintMe.com Coin", "sym": "MINTME", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 208, "warm": 2, "speedup": 93.9, "coldf": null, "hfail": [], "issues": [{"code": "jitter", "level": "info", "label": "延迟抖动大", "detail": "eth_blockNumber 连续请求耗时标准差 211 ms"}], "level": 2}, {"chainId": 31612, "name": "Mezo", "sym": "BTC", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 252, "warm": 3, "speedup": 94.5, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 34443, "name": "Mode", "sym": "ETH", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 751, "warm": 3, "speedup": 292.0, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 42161, "name": "Arbitrum One", "sym": "ETH", "tier": "A-high", "active": 10, "sp": false, "avail": 97.8, "havail": 93.3, "p50": 2, "cold": 315, "warm": 2, "speedup": 131.7, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 8, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "issues": [{"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "net_version 8/10 —— 上游不支持该方法：rpc:the method net_version does not exist/is not available"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 8/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "level": 1}, {"chainId": 42170, "name": "Arbitrum Nova", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 287, "warm": 2, "speedup": 127.5, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 42220, "name": "Celo Mainnet", "sym": "CELO", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 80.0, "p50": 4, "cold": 449, "warm": 3, "speedup": 145.0, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 4, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 4/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 42262, "name": "Oasis Emerald", "sym": "ROSE", "tier": "C-low", "active": 1, "sp": true, "avail": 100.0, "havail": 66.7, "p50": 2, "cold": 192, "warm": 2, "speedup": 78.2, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}, {"code": "single_point", "level": "info", "label": "单点", "detail": "只有 1 个活跃上游节点"}], "level": 1}, {"chainId": 43114, "name": "Avalanche C-Chain", "sym": "AVAX", "tier": "B-medium", "active": 8, "sp": false, "avail": 100.0, "havail": 86.7, "p50": 2, "cold": 309, "warm": 3, "speedup": 103.2, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 6, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 6/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "level": 1}, {"chainId": 48900, "name": "Zircuit Mainnet", "sym": "ETH", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 3, "cold": 187, "warm": 2, "speedup": 78.4, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 57073, "name": "Ink", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 170, "warm": 3, "speedup": 63.6, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 59144, "name": "Linea", "sym": "ETH", "tier": "B-medium", "active": 6, "sp": false, "avail": 100.0, "havail": 90.0, "p50": 2, "cold": 289, "warm": 3, "speedup": 105.1, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 8, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}, {"label": "早期区块 (链前 1/4 段)", "ok": 9, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 8/10、早期区块 (链前 1/4 段) 9/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "level": 1}, {"chainId": 60808, "name": "BOB", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 172, "warm": 2, "speedup": 69.9, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 71111, "name": "GuapcoinX", "sym": "GuapX", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 166, "warm": 3, "speedup": 66.0, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 73115, "name": "ICB Network", "sym": "ICBX", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 170, "warm": 3, "speedup": 59.3, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 73790, "name": "NV-CHAIN", "sym": "NVC", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 19, "warm": 3, "speedup": 5.9, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 78281, "name": "Dragonfly Mainnet (Hexapod)", "sym": "DFLY", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 153, "warm": 3, "speedup": 56.4, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 80094, "name": "Berachain", "sym": "BERA", "tier": "B-medium", "active": 7, "sp": false, "avail": 100.0, "havail": 76.7, "p50": 2, "cold": 86, "warm": 2, "speedup": 37.1, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 6, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}, {"label": "早期区块 (链前 1/4 段)", "ok": 7, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "issues": [{"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 6/10、早期区块 (链前 1/4 段) 7/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "level": 1}, {"chainId": 81457, "name": "Blast", "sym": "ETH", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 209, "warm": 3, "speedup": 78.4, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 88888, "name": "Chiliz Chain", "sym": "CHZ", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 182, "warm": 3, "speedup": 58.0, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 98866, "name": "Plume Mainnet", "sym": "PLUME", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 180, "warm": 2, "speedup": 87.4, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 167000, "name": "Taiko", "sym": "ETH", "tier": "B-medium", "active": 8, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 4, "cold": 225, "warm": 3, "speedup": 83.2, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 200901, "name": "Bitlayer Mainnet", "sym": "BTC", "tier": "C-low", "active": 1, "sp": true, "avail": 86.7, "havail": 3.3, "p50": 3, "cold": 20, "warm": 3, "speedup": 5.8, "coldf": null, "hfail": [{"label": "近期区块 (head−16…128)", "ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 200901"}, {"label": "中期区块 (head−5k…20k)", "ok": 1, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 200901"}, {"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "exhausted", "msg": "rpc:rpcrouter: all upstream endpoints exhausted for chain 200901"}], "issues": [{"code": "history_missing", "level": "crit", "label": "历史区块查不到", "detail": "近期区块 (head−16…128) 0/10、早期区块 (链前 1/4 段) 0/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 200901"}, {"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getTransactionCount 7/10、eth_getLogs 1/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 200901"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "中期区块 (head−5k…20k) 1/10 —— 上游节点耗尽：rpc:rpcrouter: all upstream endpoints exhausted for chain 200901"}, {"code": "single_point", "level": "info", "label": "单点", "detail": "只有 1 个活跃上游节点"}], "level": 0}, {"chainId": 222222, "name": "Hydration", "sym": "WETH", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 66.7, "p50": 4, "cold": 24, "warm": 3, "speedup": 8.6, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 240241, "name": "Studio Blockchain Mainnet", "sym": "STO", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 165, "warm": 2, "speedup": 84.4, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 534352, "name": "Scroll", "sym": "ETH", "tier": "B-medium", "active": 8, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 207, "warm": 3, "speedup": 59.4, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 747474, "name": "katana", "sym": "ETH", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 173, "warm": 2, "speedup": 70.3, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 955305, "name": "Eluvio Content Fabric", "sym": "ELV", "tier": "B-medium", "active": 6, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 143, "warm": 2, "speedup": 60.6, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 2632500, "name": "COTI", "sym": "COTI", "tier": "B-medium", "active": 5, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 235, "warm": 3, "speedup": 89.4, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 7777777, "name": "Zora", "sym": "ETH", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 3, "cold": 319, "warm": 2, "speedup": 139.8, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 11155111, "name": "Ethereum Sepolia", "sym": "ETH", "tier": "A-high", "active": 10, "sp": false, "avail": 100.0, "havail": 33.3, "p50": 4, "cold": 280, "warm": 3, "speedup": 96.6, "coldf": null, "hfail": [{"label": "中期区块 (head−5k…20k)", "ok": 0, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}, {"label": "早期区块 (链前 1/4 段)", "ok": 0, "total": 10, "kind": "no_data", "msg": "rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "issues": [{"code": "history_missing", "level": "warn", "label": "历史区块查不到", "detail": "中期区块 (head−5k…20k) 0/10、早期区块 (链前 1/4 段) 0/10 —— 上游缺少该区块：rpc:public endpoint only serves recent blocks (last 1024). Register at blockreq.com for historical / archive access."}], "level": 1}, {"chainId": 20181205, "name": "quarkblockchain", "sym": "QKI", "tier": "B-medium", "active": 8, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 39, "warm": 2, "speedup": 16.1, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 728126428, "name": "Tron Mainnet", "sym": "TRX", "tier": "B-medium", "active": 4, "sp": false, "avail": 88.9, "havail": 83.3, "p50": 3, "cold": 416, "warm": 3, "speedup": 145.1, "coldf": null, "hfail": [{"label": "早期区块 (链前 1/4 段)", "ok": 5, "total": 10, "kind": "no_data", "msg": "null-result (upstream returned no data for this block)"}], "issues": [{"code": "regular_fail", "level": "warn", "label": "常规请求失败", "detail": "eth_getTransactionCount 0/10 —— 上游不支持该方法：rpc:the method eth_getTransactionCount is rejected as not supported"}, {"code": "history_flaky", "level": "warn", "label": "历史区块偶发失败", "detail": "早期区块 (链前 1/4 段) 5/10 —— 上游缺少该区块：null-result (upstream returned no data for this block)"}], "level": 1}, {"chainId": 1313161554, "name": "Aurora Mainnet", "sym": "ETH", "tier": "C-low", "active": 2, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 186, "warm": 2, "speedup": 76.8, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1666600000, "name": "Harmony Mainnet Shard 0", "sym": "ONE", "tier": "B-medium", "active": 4, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 280, "warm": 2, "speedup": 112.2, "coldf": null, "hfail": [], "issues": [], "level": null}, {"chainId": 1666600001, "name": "Harmony Mainnet Shard 1", "sym": "ONE", "tier": "C-low", "active": 3, "sp": false, "avail": 100.0, "havail": 100.0, "p50": 2, "cold": 340, "warm": 2, "speedup": 161.2, "coldf": null, "hfail": [], "issues": [], "level": null}]}</script>
+<script>
+(function(){
+  "use strict";
+  var D = JSON.parse(document.getElementById('data').textContent);
+  var M = D.meta, K = D.error_kinds;
+  var $ = function(id){ return document.getElementById(id); };
+  var esc = function(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+  var num = function(v){ return v==null ? null : Number(v).toLocaleString(); };
+  var kl = function(k){ return (K[k]||K.other).label; };
+  var kd = function(k){ return (K[k]||K.other).desc; };
+  var LEVEL = [{cls:'crit', label:'严重'}, {cls:'warn', label:'警告'}, {cls:'info', label:'提示'}];
+  var LV = {crit:0, warn:1, info:2};
+
+  // ---- tooltip: any element with data-ti shows TIPS[data-ti] (hover; tap on touch) ----
+  var tip = $('tip'), TIPS = [], pinned = null;
+  function T(html){ TIPS.push(html); return ' data-ti="'+(TIPS.length-1)+'"'; }
+  function moveTip(x0, y0){
+    var x = x0 + 14, y = y0 + 16, w = tip.offsetWidth, h = tip.offsetHeight;
+    if (x + w > innerWidth - 8) x = Math.max(8, x0 - w - 14);
+    if (y + h > innerHeight - 8) y = Math.max(8, y0 - h - 16);
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function showTip(el, x, y){ tip.innerHTML = TIPS[+el.dataset.ti]; tip.style.opacity = 1; moveTip(x, y); }
+  function hideTip(){ tip.style.opacity = 0; pinned = null; }
+  document.addEventListener('mouseover', function(e){
+    var el = e.target.closest && e.target.closest('[data-ti]');
+    if (el) showTip(el, e.clientX, e.clientY); else if (!pinned) tip.style.opacity = 0;
+  });
+  document.addEventListener('mousemove', function(e){ if (tip.style.opacity == 1 && !pinned) moveTip(e.clientX, e.clientY); });
+  document.addEventListener('click', function(e){
+    var el = e.target.closest && e.target.closest('[data-ti]');
+    if (el && el !== pinned){ pinned = el; showTip(el, e.clientX, e.clientY); } else hideTip();
+  });
+  addEventListener('scroll', function(){ if (pinned) hideTip(); }, {passive:true});
+
+  function errTip(kind, msg, extra){
+    return '<b>'+esc(kl(kind))+'</b><br>'+esc(kd(kind))+(extra?'<br>'+extra:'')
+      + (msg ? '<span class="tm">'+esc(msg)+'</span>' : '');
+  }
+  function pill(t){ var c = t==='A-high'?'A':t==='B-medium'?'B':'C'; return '<span class="pill '+c+'">'+c+'</span>'; }
+  function availCls(v){ return v==null ? '' : v < 50 ? 'v-crit' : v < 100 ? 'v-warn' : ''; }
+  function sx(v){ return v>=10 ? Math.round(v) : v.toFixed(1); }
+  function chip(i){ return '<span class="chip '+i.level+'"'+T('<b>'+esc(i.label)+'</b> · '+LEVEL[LV[i.level]].label+'<br>'+esc(i.detail))+'>'+esc(i.label)+'</span>'; }
+  function ratioBadge(c){
+    if (!c || !c.total) return '<span class="badge skip"'+T('<b>未测</b><br>'+esc(c && c.skipped || '链太短，取不到这个深度的区块'))+'>未测</span>';
+    var cls = c.ok===c.total ? 'ok' : c.ok===0 ? 'fail' : 'part';
+    var tipHtml = c.ok===c.total ? '<b>'+c.ok+'/'+c.total+' 全部成功</b>'
+      : errTip(c.kind, c.msg, (c.ok===0?'全部失败':'部分失败')+' · 成功 '+c.ok+'/'+c.total);
+    if (c.blocks) tipHtml += '<span class="tm">查询的区块：'+c.blocks.map(function(b){return '#'+b.toLocaleString();}).join('、')+'</span>';
+    return '<span class="badge '+cls+'"'+T(tipHtml)+'>'+c.ok+'/'+c.total+(c.ok===0?' 失败':'')+'</span>';
+  }
+
+  // ---- header ----
+  var issueN = D.issue_rows.length;
+  var critN = D.issue_rows.filter(function(r){ return r.issues[0].level==='crit'; }).length;
+  $('summary').innerHTML = '对 <b>cryptostack RPC 路由器</b>正在服务的 <b>'+M.n_chains+'</b> 条链做了一轮体检：'
+    + '常规请求（查最新区块等）可用率 <b>'+M.avail_regular+'%</b>，'
+    + '历史区块查询可用率 <b>'+M.avail_history+'%</b>；命中缓存后的延迟 p50 约 <b>'+M.hot_p50+' ms</b>。'
+    + '共 <b>'+issueN+'</b> 条链有需要处理的问题（严重 '+critN+' · 警告 '+(issueN-critN)+'），见 02。';
+  $('metaline').innerHTML =
+    '<span>目标 <a href="https://'+esc(M.target)+'/" target="_blank" rel="noopener">'+esc(M.target)+'</a></span>'
+    + '<span>覆盖链 <b>'+M.n_chains+'</b>'+(M.catalog?' / 目录 <b class="tnum">'+num(M.catalog)+'</b>':'')+'</span>'
+    + (M.endpoints_active?'<span>活跃上游节点 <b class="tnum">'+M.endpoints_active+'</b></span>':'')
+    + '<span>采集时间 <b>'+esc(M.date)+'</b></span>';
+  $('foot-target').textContent = M.target;
+  $('foot-calls').textContent = '可用性测试 '+num(M.bench_calls)+' 次 + 延迟/缓存测试 '+num(M.latcache_calls)+' 次调用 · 采集于 '+M.date;
+
+  var CS = D.cache_summary;
+  var kpis = [
+    {lab:'常规请求可用率', val:M.avail_regular.toFixed(1), unit:'%', cls:M.avail_regular>=99.5?'good':'warn',
+     note:num(M.avail_regular_ok)+' / '+num(M.avail_regular_total)+' 次成功'},
+    {lab:'历史区块可用率', val:M.avail_history.toFixed(1), unit:'%', cls:M.avail_history>=99.5?'good':M.avail_history>=90?'warn':'crit',
+     note:num(M.avail_history_ok)+' / '+num(M.avail_history_total)+' 次成功'},
+    {lab:'热路径 p50', val:M.hot_p50, unit:'ms', note:'命中缓存后，各方法中位延迟'},
+    {lab:'缓存中位加速', val:CS.speedup_med, unit:'×', note:'冷回源 '+CS.cold_p50+'ms → 命中 '+CS.warm_p50+'ms'},
+    {lab:'有问题的链', val:issueN, unit:'条', cls:critN?'crit':issueN?'warn':'good', note:'严重 '+critN+' · 警告 '+(issueN-critN)}
+  ];
+  $('kpis').innerHTML = kpis.map(function(k){
+    return '<div class="kpi '+(k.cls||'')+'"><div class="lab">'+k.lab+'</div>'
+      +'<div class="val tnum">'+k.val+'<small>'+k.unit+'</small></div>'
+      +'<div class="note">'+k.note+'</div></div>';
+  }).join('');
+
+  // ---- 00 glossary ----
+  var gloss = [
+    ['常规可用率', '9 个常规方法（链 ID、最新块高、gas、最新区块、余额、nonce、日志等）每条链各请求 '+M.bench_samples+' 次，<b>成功的比例</b>。成功 = HTTP 200 且 JSON-RPC 返回 result、没有 error。'],
+    ['历史可用率', '查<b>过去的区块</b>的成功比例，分三个深度：近期（最新块往前 16–128 块）、中期（往前 5k–20k 块，超出「只保留最近 1024 块」的公共节点）、早期（链的前 1/4 段，需要保留完整历史的节点）。'],
+    ['p50 / p95', '把多次请求的耗时从快到慢排：<b>p50</b> 是中间那个（一半请求比它快）；<b>p95</b> 是第 95% 那个，反映「慢的时候有多慢」。'],
+    ['冷回源', '缓存测试中第 1 次请求一个随机近期区块的耗时。缓存里没有，路由器要去上游节点取，<b>反映上游速度</b>。'],
+    ['缓存命中', '同一请求紧接着再发几次，耗时的中位数。此时已命中路由器缓存，基本等于你到路由器的网络往返（不含建连握手）。'],
+    ['加速', '冷回源 ÷ 缓存命中。<b>越大说明上游越慢</b>、缓存帮的忙越大；但首次请求和不可缓存的请求享受不到。'],
+    ['抖动', 'eth_blockNumber 连续 '+M.lat_samples+' 次请求耗时的<b>标准差</b>。越大说明延迟越不稳定，时快时慢。'],
+    ['分层 A/B/C', '按活跃上游节点数：A ≥10，B 4–9，C ≤3。<span class="dotsp">▲</span> 单点 = 只有 1 个活跃节点，这个节点一挂整条链就不可用。'],
+    ['表格标记', '<span class="badge fail">失败</span> 这项请求失败了；<span class="badge part">7/10</span> 部分失败；<span class="badge ok">10/10</span> 全部成功；<span class="badge skip">未测</span> 不适用；<span class="na">—</span> 无法计算（依赖的数据失败了）。'],
+    ['问题级别', '<span class="chip crit">严重</span> 整链不可用、连近期区块都查不到、返回错链；<span class="chip warn">警告</span> 部分请求失败、历史区块缺失、首次请求失败、上游慢；<span class="chip info">提示</span> 单点、抖动大。']
+  ];
+  $('gloss').innerHTML = gloss.map(function(g){
+    return '<div class="gi"><span class="gk">'+g[0]+'</span><span class="gv">'+g[1]+'</span></div>';
+  }).join('');
+
+  // ---- 01 tiers ----
+  var tcol = {'A-high':'var(--tierA)','B-medium':'var(--tierB)','C-low':'var(--tierC)'};
+  var tink = {'A-high':'#fff','B-medium':'#fff','C-low':'#0b2749'};
+  var total = D.tiers.reduce(function(a,t){return a+t.count;},0);
+  $('tierbar').innerHTML = D.tiers.map(function(t){
+    var pc = t.count/total*100;
+    return '<div class="tierseg" style="flex:'+t.count+' '+t.count+' 0;background:'+tcol[t.tier]+';color:'+tink[t.tier]+'"'
+      + T('<b>'+esc(t.label)+'</b><br>'+t.count+' 条链 · '+pc.toFixed(0)+'%')+'>'+(pc>7? t.count : '')+'</div>';
+  }).join('');
+  $('tierlegend').innerHTML = D.tiers.map(function(t){
+    return '<span><span class="dot" style="background:'+tcol[t.tier]+'"></span>'+esc(t.label)+' · <b class="tnum">'+t.count+'</b> 条</span>';
+  }).join('');
+  $('tiertags').innerHTML =
+    '<span class="tag">单点链（仅 1 个活跃节点） <b class="tnum">'+D.single_point+'</b></span>';
+
+  // ---- 02 issues ----
+  $('issuesub').innerHTML = '共 <b>'+issueN+'</b> 条链有<b>严重</b>或<b>警告</b>级问题（严重 '+critN+' 条），严重的排在前面。'
+    + '「详情」列是测试中实际观察到的情况和上游返回的错误原文。下面的标签是各类问题涉及的链数（含提示级）。';
+  var order = Object.keys(D.issue_meta).sort(function(a,b){
+    return LV[D.issue_meta[a].level]-LV[D.issue_meta[b].level] || D.issue_counts[b]-D.issue_counts[a]; });
+  $('issuechips').innerHTML = order.map(function(code){
+    var im = D.issue_meta[code];
+    return '<span class="chip '+im.level+'">'+esc(im.label)+' · <b class="tnum">'+D.issue_counts[code]+'</b></span>';
+  }).join('');
+  document.querySelector('#issuetable tbody').innerHTML = D.issue_rows.map(function(r){
+    var top = LEVEL[LV[r.issues[0].level]];
+    return '<tr><td>'+esc(r.name)+'</td><td class="num">'+r.chainId+'</td><td>'+pill(r.tier)+'</td>'
+      + '<td><span class="chip '+top.cls+'">'+top.label+'</span></td>'
+      + '<td style="white-space:normal;min-width:120px">'+r.issues.map(chip).join('')+'</td>'
+      + '<td class="long">'+r.issues.map(function(i){
+          return '<div style="margin-bottom:5px"><b style="color:var(--fg)">'+esc(i.label)+'</b>'
+            + i.detail.split('；').map(function(line){ return '<div class="err">· '+esc(line)+'</div>'; }).join('')+'</div>';
+        }).join('')+'</td></tr>';
+  }).join('') || '<tr><td colspan="6" class="na">没有发现需要处理的问题</td></tr>';
+
+  // ---- 03 availability bars ----
+  var hd = D.history.depths;
+  $('availsub').innerHTML = '每个方法在 '+M.n_chains+' 条链上各请求 '+M.bench_samples+' 次。'
+    + '<b>常规方法</b>共 '+num(M.avail_regular_total)+' 次，成功率 <b>'+M.avail_regular+'%</b>；'
+    + '<b>历史区块</b>共 '+num(M.avail_history_total)+' 次，成功率 <b>'+M.avail_history+'%</b>。'
+    + '条长 = 成功率（0–100%），最右侧红字是失败次数。';
+  (function(){
+    var col = {simple:'var(--s-blue)', complex:'var(--s-orange)', history:'var(--s-violet)'};
+    var gname = {simple:'简单方法', complex:'复杂方法', history:'历史区块'};
+    $('availbars').innerHTML = D.methods_avail.map(function(a){
+      var nm = a.group==='history' ? esc(a.label.split(' (')[0])+'<small>'+esc(a.label.split(' (')[1].replace(')',''))+'</small>' : esc(a.name);
+      var lab = a.sr==null ? '未测' : a.sr.toFixed(1)+'%';
+      var fails = a.total - a.ok;
+      return '<div class="barrow f3"><div class="name">'+nm+'</div>'
+        + '<div class="track"'+T('<b>'+esc(a.label)+'</b> · '+gname[a.group]+'<br>成功 '+a.ok+' / '+a.total+' 次（'+lab+'）'+(fails?'<br>失败 '+fails+' 次，原因见 '+(a.group==='history'?'05':'04'):''))+'>'
+        + '<div class="fill" style="width:'+(a.sr||0)+'%;background:'+col[a.group]+'"><span class="vlab">'+lab
+        + '</span></div></div><div class="fc">'+(fails?'失败 '+fails:'')+'</div></div>';
+    }).join('');
+  })();
+
+  // ---- 04 regular failures ----
+  (function(){
+    var fs = D.failures, groups = {};
+    fs.forEach(function(f){ (groups[f.kind] = groups[f.kind] || []).push(f); });
+    var chainsN = {}; fs.forEach(function(f){ chainsN[f.chainId] = 1; });
+    $('failsub').innerHTML = '常规方法（最新区块类）共 <b>'+fs.length+'</b> 处失败，涉及 <b>'+Object.keys(chainsN).length+'</b> 条链，按原因分组。'
+      + '每组标题下是这类错误的含义；每条列出 链 · 方法 · 成功次数/总次数 · 错误原文。历史区块的失败见 05。';
+    var kinds = Object.keys(K).filter(function(k){ return groups[k]; });
+    $('failgrid').innerHTML = kinds.map(function(k){
+      return '<div class="failcard '+k+'"><h3>'+esc(kl(k))+' · '+groups[k].length+'</h3><p class="kd">'+esc(kd(k))+'</p><ul>'
+        + groups[k].map(function(f){
+            return '<li><b>'+esc(f.name)+'</b> <span class="tnum">('+f.chainId+')</span> — '+esc(f.method)
+              + ' <span class="badge '+(f.ok?'part':'fail')+'">'+f.ok+'/'+f.total+'</span>'
+              + '<span class="m">'+esc(f.msg)+'</span></li>';
+          }).join('') + '</ul></div>';
+    }).join('') || '<div class="card na">常规方法没有失败</div>';
+  })();
+
+  // ---- 05 history ----
+  (function(){
+    var hs = 0; D.history.rows.forEach(function(r){ Object.keys(r.cells).forEach(function(k){ hs = Math.max(hs, r.cells[k].total); }); });
+    $('hsamples').textContent = M.bench_samples;
+    $('dtiles').innerHTML = hd.map(function(d){
+      var cls = d.sr>=99.5?'good-ink':d.sr>=90?'warn-ink':'crit-ink';
+      return '<div class="dtile"><div class="dl">'+esc(d.label)+'</div><div class="dw">'+esc(d.window)+'</div>'
+        + '<div class="dv tnum" style="color:var(--'+cls+')">'+(d.sr==null?'—':d.sr.toFixed(1))+'<small>%</small></div>'
+        + '<div class="dn">成功 '+num(d.ok)+' / '+num(d.total)+' 次</div>'
+        + '<div class="dd"><span class="v-crit">'+d.chains_none+'</span> 条链全部失败 · <span class="v-warn">'+d.chains_some+'</span> 条链部分失败'
+        + (d.chains_skipped?' · '+d.chains_skipped+' 条未测':'')+'</div></div>';
+    }).join('');
+    hd.forEach(function(d){ $('h-'+d.id).innerHTML = esc(d.label)+'<small>'+esc(d.window)+'</small>'; });
+    $('htitle').textContent = '有历史区块失败的链 · '+D.history.rows.length+' 条（全部失败的排在前面）';
+    document.querySelector('#histtable tbody').innerHTML = D.history.rows.map(function(r){
+      var kinds = {}, msg = {};
+      hd.forEach(function(d){ var c = r.cells[d.id]; if (c && c.kind){ kinds[c.kind] = (kinds[c.kind]||0) + (c.total-c.ok); msg[c.kind] = c.msg; } });
+      var main = Object.keys(kinds).sort(function(a,b){ return kinds[b]-kinds[a]; })[0];
+      return '<tr><td>'+esc(r.name)+'</td><td class="num">'+r.chainId+'</td><td>'+pill(r.tier)+'</td>'
+        + hd.map(function(d){ return '<td>'+ratioBadge(r.cells[d.id])+'</td>'; }).join('')
+        + '<td><span'+T(errTip(main, msg[main]))+' style="border-bottom:1px dashed var(--muted)">'+esc(kl(main))+'</span></td></tr>';
+    }).join('') || '<tr><td colspan="7" class="na">所有链的历史区块都查询成功</td></tr>';
+  })();
+
+  // ---- 06 latency bars ----
+  $('latsub').innerHTML = '延迟测试中每条链每个方法<b>连续请求 '+M.lat_samples+' 次</b>（同一条链内串行，不自己抢资源），'
+    + '先算出每条链的 p50 / p95，再取所有链的中位数。这些请求大多命中缓存，所以反映的是<b>路由器本身</b>的速度。';
+  (function(){
+    var max = 0; D.methods_latency.forEach(function(l){ max = Math.max(max, l.p95||0); });
+    max = Math.ceil(max/10)*10 + 10;
+    $('latbars').innerHTML = D.methods_latency.map(function(l){
+      var w50 = l.p50/max*100, w95 = l.p95/max*100;
+      return '<div class="barrow"><div class="name">'+esc(l.name)+'</div>'
+        + '<div class="track"'+T('<b>'+esc(l.name)+'</b><br>p50 '+l.p50+' ms · p95 '+l.p95+' ms<br>'+l.n+' 条链的中位数')+'>'
+        + '<div style="position:absolute;left:'+w50+'%;width:'+(w95-w50)+'%;height:100%;background:var(--grid)"></div>'
+        + '<div class="fill" style="width:'+w50+'%;background:var(--s-blue)"><span class="vlab">'+l.p50+'ms</span></div>'
+        + '<span class="vlab out" style="left:'+w95+'%">p95 '+l.p95+'</span>'
+        + '</div></div>';
+    }).join('');
+  })();
+
+  // ---- 07 cache ----
+  $('creps').textContent = CS.reps;
+  $('cachesub').innerHTML = '中位数：冷回源 <b>'+CS.cold_p50+' ms</b> → 缓存命中 <b>'+CS.warm_p50+' ms</b>，中位加速 <b>'+CS.speedup_med+'×</b>；'
+    + '<b>'+CS.benefit+'/'+CS.n+'</b> 条链加速 ≥ '+CS.benefit_x+'×。'
+    + '另有 <b>'+CS.n_cold_fail+'</b> 条链的冷请求失败，没有计入统计（见本节下方）。下图是加速最多的 '+D.cache_top.length+' 条链。';
+  (function(){
+    var max = 0; D.cache_top.forEach(function(c){ max = Math.max(max, c.cold); });
+    $('cachebars').innerHTML = D.cache_top.map(function(c){
+      var w = Math.max(c.cold/max*100, 1), inside = w > 45;
+      var ann = '<span class="cold">'+num(c.cold)+'ms</span><span class="warm">→ 命中 '+c.warm+'ms</span>'
+        + '<span class="sx">'+sx(c.speedup)+'×</span>';
+      return '<div class="crow"><div class="cn" title="'+esc(c.name)+'">'+esc(c.name)+' <small>'+c.chainId+'</small></div>'
+        + '<div class="cbarwrap"'+T('<b>'+esc(c.name)+'</b> ('+c.chainId+')<br>冷回源 '+num(c.cold)+' ms → 缓存命中 '+c.warm+' ms<br>加速 <b>'+c.speedup+'×</b>')+'>'
+        + '<div class="cbar" style="width:'+w+'%"></div>'
+        + '<div class="cann'+(inside?'':' dark')+'" style="'+(inside?'left:0':'left:'+w+'%')+'">'+ann+'</div>'
+        + '</div></div>';
+    }).join('');
+    $('cftitle').textContent = '冷请求失败的链 · '+D.cache_fail.length+' 条';
+    document.querySelector('#cftable tbody').innerHTML = D.cache_fail.map(function(f){
+      var after = f.retry_call
+        ? '<span class="badge part">第 '+f.retry_call+' 次才成功</span> <span class="tnum" style="font-family:var(--mono);font-size:11.5px">'+num(f.retry_ms)+' ms</span>'
+        : '<span class="badge fail">'+f.reps+' 次全部失败</span>';
+      return '<tr><td>'+esc(f.name)+'</td><td class="num">'+f.chainId+'</td>'
+        + '<td><span'+T(errTip(f.kind, null, '查询区块 #'+num(f.block)))+' style="border-bottom:1px dashed var(--muted)">'+esc(kl(f.kind))+'</span></td>'
+        + '<td class="num">'+num(f.fail_ms)+'</td><td>'+after+'</td>'
+        + '<td class="long"><span class="err">'+esc(f.msg)+'</span></td></tr>';
+    }).join('') || '<tr><td colspan="6" class="na">没有冷请求失败的链</td></tr>';
+  })();
+
+  // ---- 08 jitter ----
+  $('jitsub').innerHTML = '抖动 = <code>eth_blockNumber</code> 连续 '+M.lat_samples+' 次请求耗时的<b>标准差</b>。p50 正常但抖动大，说明大部分请求很快、偶尔有几次很慢，'
+    + '通常是上游池里有不稳定的节点，这些链适合加节点或换上游。下表是抖动最大的 '+D.jitter_top.length+' 条链（≥ '+M.thresholds.jitter_ms+' ms 会标为「延迟抖动大」）。';
+  document.querySelector('#jittertable tbody').innerHTML = D.jitter_top.map(function(j){
+    return '<tr><td>'+esc(j.name)+'</td><td class="num">'+j.chainId+'</td>'
+      + '<td class="num '+(j.jitter>=M.thresholds.jitter_ms?'v-warn':'')+'">'+j.jitter+'</td>'
+      + '<td class="num">'+j.p50+'</td><td class="num">'+j.p95+'</td></tr>';
+  }).join('');
+
+  // ---- 09 all chains ----
+  (function(){
+    var rows = D.all_chains.slice();
+    var tbody = document.querySelector('#alltable tbody');
+    var sortK = 'level', sortAsc = true;
+    var q = $('q'), tierf = $('tierf'), levelf = $('levelf'), spf = $('spf'), rc = $('rowcount');
+    $('allsub').innerHTML = M.n_chains+' 条链全量。点表头排序（默认按问题严重度），可按名称 / chainId 搜索、按分层或问题级别筛选。'
+      + '<b>加速 = 冷回源 ÷ 缓存命中</b>，三列来自同一组请求，可以直接相除核对。';
+    var NA = '<span class="na">—</span>';
+
+    function sval(r, k){ return k==='level' ? (r.level==null ? 9 : r.level) : r[k]; }
+    function cells(r){
+      var coldCell, warmCell, spCell;
+      if (r.cold != null){
+        coldCell = num(r.cold);
+      } else if (r.coldf){
+        var f = r.coldf;
+        coldCell = '<span class="badge fail"'+T(errTip(f.kind, f.msg, '第 1 次请求失败'+(f.ms!=null?'（耗时 '+num(f.ms)+' ms）':'')
+          + (f.retry_call ? '<br>第 '+f.retry_call+' 次才成功（'+num(f.retry_ms)+' ms）' : '<br>后续请求也全部失败')))+'>失败</span>';
+      } else coldCell = NA;
+      warmCell = r.warm != null ? num(r.warm)
+        : '<span class="na"'+T('缓存测试中没有成功的后续请求，无法得到缓存命中耗时')+'>—</span>';
+      spCell = r.speedup != null ? '<span style="color:var(--s-aqua);font-weight:700">'+sx(r.speedup)+'×</span>'
+        : '<span class="na"'+T('冷回源'+(r.cold==null?'失败':'')+(r.warm==null?(r.cold==null?'、':'')+'缓存命中缺失':'')+'，无法计算加速')+'>—</span>';
+      var hv = r.havail;
+      var hCell = hv==null ? '<span class="badge skip">未测</span>'
+        : '<span class="'+availCls(hv)+'"'+(r.hfail.length ? T('<b>历史区块失败</b>'+r.hfail.map(function(h){
+            return '<br>'+esc(h.label)+'：'+h.ok+'/'+h.total+'（'+esc(kl(h.kind))+'）<span class="tm">'+esc(h.msg)+'</span>'; }).join('')) : '')
+          + (r.hfail.length?' style="border-bottom:1px dashed currentColor"':'')+'>'+hv.toFixed(1)+'</span>';
+      var iss = r.issues.length ? r.issues.map(chip).join('') : '<span class="chip okc">正常</span>';
+      return '<tr><td>'+esc(r.name)+'</td>'
+        + '<td class="num">'+r.chainId+'</td>'
+        + '<td>'+pill(r.tier)+'</td>'
+        + '<td style="white-space:normal;min-width:170px;max-width:260px">'+iss+'</td>'
+        + '<td class="num">'+r.active+(r.sp?' <span class="dotsp" title="单点">▲</span>':'')+'</td>'
+        + '<td class="num"><span class="'+availCls(r.avail)+'">'+(r.avail!=null?r.avail.toFixed(1):'—')+'</span></td>'
+        + '<td class="num">'+hCell+'</td>'
+        + '<td class="num">'+(r.p50!=null?r.p50:NA)+'</td>'
+        + '<td class="num">'+coldCell+'</td>'
+        + '<td class="num">'+warmCell+'</td>'
+        + '<td class="num">'+spCell+'</td></tr>';
+    }
+    function render(){
+      var term = q.value.trim().toLowerCase(), tf = tierf.value, lf = levelf.value, sp = spf.checked;
+      var list = rows.filter(function(r){
+        if (tf && r.tier!==tf) return false;
+        if (sp && !r.sp) return false;
+        if (lf==='ok' && r.level!=null && r.level<=1) return false;
+        if (lf!=='' && lf!=='ok' && (r.level==null || r.level>+lf)) return false;
+        if (term){ return (r.name.toLowerCase().indexOf(term)>=0) || (''+r.chainId).indexOf(term)>=0; }
+        return true;
+      });
+      list.sort(function(a,b){
+        var x = sval(a, sortK), y = sval(b, sortK);
+        if (x==null) return 1;            // missing values always last
+        if (y==null) return -1;
+        var d = typeof x==='string' ? x.localeCompare(y) : x-y;
+        return (sortAsc ? d : -d) || a.chainId-b.chainId;
+      });
+      tbody.innerHTML = list.map(cells).join('') || '<tr><td colspan="11" class="na">没有符合条件的链</td></tr>';
+      rc.textContent = list.length + ' / ' + rows.length + ' 条';
+      Array.prototype.forEach.call(document.querySelectorAll('#alltable thead th'), function(th){
+        th.classList.toggle('sorted', th.dataset.k===sortK);
+        th.classList.toggle('asc', th.dataset.k===sortK && sortAsc);
+      });
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('#alltable thead th'), function(th){
+      th.addEventListener('click', function(){
+        var k = th.dataset.k;
+        if (k===sortK){ sortAsc = !sortAsc; } else { sortK = k; sortAsc = (k==='name' || k==='level' || k==='chainId'); }
+        render();
+      });
+    });
+    q.addEventListener('input', render);
+    tierf.addEventListener('change', render);
+    levelf.addEventListener('change', render);
+    spf.addEventListener('change', render);
+    render();
+  })();
+
+  // ---- 10 methodology ----
+  $('mlist').innerHTML = [
+    ['采样入口', '所有请求经路由器 <code>POST /rpc/{chainId}</code> 转发；链目录取自 <code>/api/public/chains?limit=500</code>，概览取自 <code>/api/public/overview</code>。'],
+    ['简单方法', 'eth_chainId · eth_blockNumber · net_version · eth_gasPrice · web3_clientVersion'],
+    ['复杂方法', 'eth_getBlockByNumber(latest,true) · eth_getBalance · eth_getTransactionCount · eth_getLogs(latest)'],
+    ['历史区块', hd.map(function(d){ return esc(d.label)+'（'+esc(d.window)+'）'; }).join(' · ')
+      + '。都用 <code>eth_getBlockByNumber(区块号,false)</code>，以测试开始时实时查到的最新块高为基准，每次随机换区块。'],
+    ['成功判定', 'HTTP 200 且 JSON-RPC 含 result、无 error；eth_chainId 还要校验返回值等于请求的 chainId；历史区块和缓存测试中<b>返回 null 也算失败</b>（上游没有该区块）。'],
+    ['延迟测试', '5 个方法每条链各连续请求 '+M.lat_samples+' 次（链内串行、链间并行），算 p50 / p95 / 标准差。所有请求复用 keep-alive 连接，<b>耗时不含 TCP/TLS 握手</b>。'],
+    ['缓存冷/热', '每条链随机取一个近期区块（实时块高往前 200–800 块），同一请求连发 '+CS.reps+' 次：第 1 次为冷回源；之后成功的请求取中位数为缓存命中。若第 1 次失败，则跳过第一个成功的（它才是真正的回源），只用之后的请求算命中。'],
+    ['错误分类', '按上游返回的错误原文归类（见下表）。同一个（链, 方法）出现多种错误时，取出现次数最多的那种，并附一条原文。']
+  ].map(function(x){ return '<div class="mi"><span class="k">'+x[0]+'</span><span class="v">'+x[1]+'</span></div>'; }).join('');
+  document.querySelector('#kindtable tbody').innerHTML = Object.keys(K).map(function(k){
+    return '<tr><td><b>'+esc(K[k].label)+'</b></td><td><code>'+k+'</code></td><td class="long">'+esc(K[k].desc)+'</td></tr>';
+  }).join('');
+  var rules = [
+    ['crit', '整链不可用 / 测试期间曾整链不可用', '某个测试阶段（可用性 / 延迟 / 缓存）这条链的请求全部失败；三个阶段都失败为「整链不可用」'],
+    ['crit', '返回了错误的链', 'eth_chainId 返回值 ≠ 请求的 chainId'],
+    ['crit', '历史区块查不到（近期）', '连最近 16–128 块都查不到'],
+    ['warn', '历史区块查不到', '中期或早期区块全部失败（0/'+M.bench_samples+'）'],
+    ['warn', '历史区块偶发失败', '某个深度部分失败（如 2/'+M.bench_samples+'）'],
+    ['warn', '常规请求失败', '9 个常规方法中有任意一次失败'],
+    ['warn', '首次请求失败', '缓存测试第 1 次失败、后面某次成功：路由器遇到这个错误没有自动换上游'],
+    ['warn', '缓存测试全部失败', '缓存测试的历史区块连续 '+CS.reps+' 次都失败'],
+    ['warn', '上游慢', '冷回源 ≥ '+num(M.thresholds.slow_cold_ms)+' ms'],
+    ['info', '延迟抖动大', 'eth_blockNumber 耗时标准差 ≥ '+M.thresholds.jitter_ms+' ms'],
+    ['info', '单点', '只有 1 个活跃上游节点']
+  ];
+  document.querySelector('#ruletable tbody').innerHTML = rules.map(function(r){
+    return '<tr><td><span class="chip '+r[0]+'">'+LEVEL[LV[r[0]]].label+'</span></td><td><b>'+r[1]+'</b></td><td class="long">'+r[2]+'</td></tr>';
+  }).join('');
+})();
+</script>
+</body>
+</html>
