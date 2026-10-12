@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""Build the report data and inline it into rpc_report.html.
+"""Build the report data and render it into a new report page.
 
 Inputs (newest results_* files are picked automatically; override with flags):
   chains_all.json                 chain catalog snapshot (/api/public/chains?limit=500)
   overview.json                   router overview snapshot (/api/public/overview), optional
   results_raw_*.json              output of rpc_bench.py      (availability, incl. history)
   results_latcache_raw_*.json     output of latency_cache.py  (stable latency + cache probe)
+  report_template.html            the report page; its <script id="data"> block gets the data
+  runs/*.json                     summaries of earlier runs, for the trend section
 
 Outputs:
   report_data.json                merged per-chain record (everything, for digging)
   report_embed.json               the compact data the page renders
-  rpc_report.html                 <script id="data"> block replaced in place
+  runs/<bench ts>.json            this run's summary (KPIs + per-chain issues), read by later builds
+  rpc_report_<date>_<time>.html   a new page (or --html); existing reports are never touched
 
 Example
 -------
   python3 build_report.py
-  python3 build_report.py --bench results_raw_X.json --latcache results_latcache_raw_Y.json
+  python3 build_report.py --bench results_raw_X.json --latcache results_latcache_raw_Y.json --html out.html
 """
 import argparse
 import glob
@@ -28,7 +31,8 @@ from collections import Counter
 from datetime import datetime
 from urllib.parse import urlparse
 
-from rpcutil import BASE, ERROR_KINDS, HISTORY_METHODS, METHOD_GROUP, classify_error, pct, load_chains
+from rpcutil import (BASE, ERROR_KINDS, HISTORY_METHODS, METHOD_GROUP, METHOD_LABEL, classify_error, pct,
+                     load_chains, head_regressions)
 from classify_chains import redundancy_tier
 
 TIER_LABELS = {"A-high": "A 高冗余 (≥10)", "B-medium": "B 中 (4–9)", "C-low": "C 低/单点 (≤3)"}
@@ -36,7 +40,10 @@ HIST = {m["id"]: m for m in HISTORY_METHODS}
 SLOW_COLD_MS = 1000     # cold upstream fetch at/above this -> "上游慢"
 JITTER_MS = 200         # eth_blockNumber stdev at/above this -> "抖动大"
 BENEFIT_X = 1.3         # speedup at/above this counts as "cache helps"
+HEAD_BACK_WARN = 3      # eth_blockNumber went back this many blocks or more -> warn (less -> info)
+TREND_RUNS = 8          # runs shown in the trend section (this one included)
 LEVEL_RANK = {"crit": 0, "warn": 1, "info": 2}
+REGULAR = ("simple", "complex")
 
 
 def newest(pattern):
@@ -70,14 +77,37 @@ def top_error(errors):
 def method_label(mid):
     if mid in HIST:
         return "%s (%s)" % (HIST[mid]["label"], HIST[mid]["window"])
-    return mid
+    return METHOD_LABEL.get(mid, mid)
+
+
+def avail(methods, groups):
+    """(success %, ok, total) over the methods of the given groups."""
+    ms_ = [m for m in methods if m["group"] in groups]
+    ok, tot = sum(m["ok"] for m in ms_), sum(m["total"] for m in ms_)
+    return (round(ok / tot * 100, 1) if tot else None), ok, tot
+
+
+def head_back(track):
+    """rpc_bench head_track -> {n_back, max_back, n, heads, sec_back} (None for older runs)."""
+    if not track or not track.get("heads"):
+        return None
+    ts = [t for t, _ in track["heads"]]
+    bs = [b for _, b in track["heads"]]
+    n_back, max_back = head_regressions(bs)
+    # blocks per second from the running maximum, to express "blocks back" as time
+    best = [max(bs[:i + 1]) for i in range(len(bs))]
+    rate = (best[-1] - best[0]) / (ts[-1] - ts[0]) if ts[-1] > ts[0] and best[-1] > best[0] else None
+    return {"n_back": n_back, "max_back": max_back, "n": len(bs), "heads": bs,
+            "sec_back": round(max_back / rate, 1) if (rate and max_back) else None}
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--bench", help="results_raw_*.json from rpc_bench.py (default: newest)")
     ap.add_argument("--latcache", help="results_latcache_raw_*.json from latency_cache.py (default: newest)")
-    ap.add_argument("--html", default="rpc_report.html")
+    ap.add_argument("--template", default="report_template.html", help="report page to fill (default: %(default)s)")
+    ap.add_argument("--html", help="output page (default: rpc_report_<bench date>_<time>.html)")
+    ap.add_argument("--runs", default="runs", help="run-summary directory for the trend section (default: runs)")
     args = ap.parse_args()
 
     bench_path = args.bench or newest("results_raw_*.json")
@@ -113,10 +143,6 @@ def main():
         cf = cache[cid]["fixed"]
         cl = cache[cid]["latest"]
 
-        reg = [m for m in pm.values() if m["group"] != "history"]
-        hist = {k: pm[k] for k in HIST if k in pm}
-        reg_ok, reg_tot = sum(m["ok"] for m in reg), sum(m["total"] for m in reg)
-        h_ok, h_tot = sum(m["ok"] for m in hist.values()), sum(m["total"] for m in hist.values())
         speed = (cf["cold"] / cf["warm_med"]) if (cf["cold"] and cf["warm_med"]) else None
 
         c = {
@@ -130,8 +156,11 @@ def main():
             "ingress_incl_tests": cat.get("ingressTotal") or 0,
             "head": bres[cid].get("head"),
             "head_source": bres[cid].get("head_source"),
-            "avail_regular": round(reg_ok / reg_tot * 100, 1) if reg_tot else None,
-            "avail_history": round(h_ok / h_tot * 100, 1) if h_tot else None,
+            "avail_regular": avail(pm.values(), REGULAR)[0],
+            "avail_advanced": avail(pm.values(), ("advanced",))[0],
+            "avail_history": avail(pm.values(), ("history",))[0],
+            "tx_found": bres[cid].get("tx_found"),
+            "head_back": head_back(bres[cid].get("head_track")),
             "methods": {mid: dict({
                 "group": m["group"], "ok": m["ok"], "total": m["total"],
                 "avg": ms(m["lat_avg"]), "p50": ms(m["lat_p50"]),
@@ -168,16 +197,104 @@ def main():
 
     embed = build_embed(chains, bench, lc, overview)
 
+    # trend: this run against the earlier run summaries in --runs
+    run = run_summary(embed, chains, bench)
+    runs = load_runs(args.runs, run["ts"]) + [run]
+    embed["trend"] = build_trend(runs)
+    for r in embed["issue_rows"]:
+        r["seen"] = embed["trend"]["seen"].get(str(r["chainId"]))
+
     with open("report_data.json", "w") as f:
         json.dump(chains, f, ensure_ascii=False, indent=1)
     with open("report_embed.json", "w") as f:
         json.dump(embed, f, ensure_ascii=False)
-    inject(args.html, embed)
+    os.makedirs(args.runs, exist_ok=True)
+    run_path = os.path.join(args.runs, "%s.json" % run["ts"])
+    with open(run_path, "w") as f:
+        json.dump(run, f, ensure_ascii=False, indent=1)
+    out = args.html or "rpc_report_%s.html" % datetime.strptime(run["ts"], "%Y%m%dT%H%M%SZ").strftime("%Y%m%d_%H%M")
+    render(args.template, out, embed)
 
     print("chains   : %d  (issues: %s)" % (len(chains), dict(Counter(
         i["code"] for c in chains for i in c["issues"]))))
-    print("wrote report_data.json, report_embed.json, %s" % args.html)
+    print("trend    : %d runs (%s)" % (len(embed["trend"]["runs"]), ", ".join(r["ts"] for r in embed["trend"]["runs"])))
+    print("wrote report_data.json, report_embed.json, %s, %s" % (run_path, out))
     return 0
+
+
+def run_summary(embed, chains, bench):
+    """What later builds need from this run: how it was measured, the KPIs, per-chain issues."""
+    m, cs, bm = embed["meta"], embed["cache_summary"], bench.get("meta", {})
+    return {
+        "ts": bm.get("ts"), "date": datetime.strptime(bm["ts"], "%Y%m%dT%H%M%SZ").strftime("%Y-%m-%d %H:%M UTC"),
+        "method": {"samples": bm.get("samples"), "interval": bm.get("interval") or 0,
+                   "keepalive": "connections" in bm,   # rpc_bench reuses connections since it reports them
+                   "cache_blocks": cs["blocks"], "advanced": m["avail_advanced"] is not None},
+        "kpi": {"n_chains": m["n_chains"], "avail_regular": m["avail_regular"],
+                "avail_advanced": m["avail_advanced"], "avail_history": m["avail_history"],
+                "hot_p50": m["hot_p50"], "cold_p50": cs["cold_p50"], "warm_p50": cs["warm_p50"],
+                "speedup_med": cs["speedup_med"], "n_issue": len(embed["issue_rows"]),
+                "n_crit": sum(1 for r in embed["issue_rows"] if r["issues"][0]["level"] == "crit"),
+                # None for runs from before rpc_bench tracked eth_blockNumber answers
+                "n_head_back": sum(1 for c in chains if c["head_back"] and c["head_back"]["n_back"])
+                if any(c["head_back"] for c in chains) else None},
+        "chains": {str(c["chainId"]): {"name": c["name"], "level": c["level"],
+                                       "issues": [[i["code"], i["level"], i["label"]] for i in c["issues"]]}
+                   for c in chains},
+    }
+
+
+def load_runs(path, before_ts):
+    runs = []
+    for f in sorted(glob.glob(os.path.join(path, "*.json"))):
+        r = json.load(open(f))
+        if r.get("ts") and r["ts"] < before_ts:
+            runs.append(r)
+    return sorted(runs, key=lambda r: r["ts"])
+
+
+def method_text(m):
+    parts = ["连接复用" if m["keepalive"] else "每次新建连接", "%s 次采样" % m["samples"],
+             "限速 %ss" % m["interval"] if m["interval"] else "不限速"]
+    if (m.get("cache_blocks") or 1) > 1:
+        parts.append("缓存测 %d 个区块" % m["cache_blocks"])
+    if m.get("advanced"):
+        parts.append("含进阶方法")
+    return " · ".join(parts)
+
+
+def build_trend(runs):
+    """KPIs of the last TREND_RUNS runs + which chains became / stopped being problems since the previous one."""
+    runs = runs[-TREND_RUNS:]
+    cur = runs[-1]
+    prev = runs[-2] if len(runs) > 1 else None
+
+    def problems(r):   # chains with a warn/crit issue
+        return {cid: c for cid, c in r["chains"].items() if c["level"] is not None and c["level"] <= LEVEL_RANK["warn"]}
+
+    def labels(c):
+        return [i[2] for i in c["issues"] if i[1] != "info"]
+
+    now = problems(cur)
+    out = {
+        "runs": [dict(r["kpi"], ts=r["ts"], date=r["date"], method=method_text(r["method"])) for r in runs],
+        "n": len(runs),
+        # in how many of the shown runs each current problem chain was a problem
+        "seen": {cid: sum(1 for r in runs if cid in problems(r)) for cid in now},
+        "prev": None,
+    }
+    if prev:
+        before = problems(prev)
+        key = lambda kv: int(kv[0])
+        out["prev"] = {
+            "date": prev["date"], "same_method": prev["method"] == cur["method"],
+            "new": [{"chainId": int(cid), "name": c["name"], "issues": labels(c)}
+                    for cid, c in sorted(now.items(), key=key) if cid not in before],
+            "resolved": [{"chainId": int(cid), "name": c["name"], "issues": labels(c),
+                          "untested": cid not in cur["chains"]}
+                         for cid, c in sorted(before.items(), key=key) if cid not in now],
+        }
+    return out
 
 
 def fmt_fails(items):
@@ -197,7 +314,7 @@ def chain_issues(c):
         out.append({"code": code, "level": level, "label": label, "detail": detail})
 
     # 1) chain unreachable: a whole test phase got zero successful answers
-    reg = [m for m in pm.values() if m["group"] != "history"]
+    reg = [m for m in pm.values() if m["group"] != "history" and m["total"]]
     phases = [
         ("可用性测试", sum(m["ok"] for m in reg), sum(m["total"] for m in reg),
          next((m["err"] for m in reg if m["err"]), None)),
@@ -217,13 +334,24 @@ def chain_issues(c):
     if pm.get("eth_chainId", {}).get("kind") == "wrong_chain":
         add("wrong_chain", "crit", "返回了错误的链", pm["eth_chainId"]["err"])
 
-    # 3) regular (latest-block) methods with failures
+    # 3) regular (latest-block) and advanced methods with failures
     if "可用性测试" not in dead_names:
-        bad = [(mid, m) for mid, m in pm.items() if m["group"] != "history" and m["ok"] < m["total"]
-               and m["kind"] != "wrong_chain"]
-        if bad:
-            add("regular_fail", "warn", "常规请求失败", fmt_fails(
-                [(mid, m["ok"], m["total"], m["kind"], m["err"]) for mid, m in bad]))
+        for code, label, groups in (("regular_fail", "常规请求失败", REGULAR),
+                                    ("advanced_fail", "进阶方法失败", ("advanced",))):
+            bad = [(mid, m) for mid, m in pm.items() if m["group"] in groups and m["ok"] < m["total"]
+                   and m["kind"] != "wrong_chain"]
+            if bad:
+                add(code, "warn", label, fmt_fails(
+                    [(method_label(mid), m["ok"], m["total"], m["kind"], m["err"]) for mid, m in bad]))
+
+    # 3b) eth_blockNumber went backwards: the router mixes upstreams at different heights
+    hb = c["head_back"]
+    if hb and hb["n_back"]:
+        add("head_back", "warn" if hb["max_back"] >= HEAD_BACK_WARN else "info", "块高回退",
+            "eth_blockNumber %d 次调用中有 %d 次比之前返回的块高还低，最多低 %s 块%s"
+            "——用户可能先看到新块、再看到旧块" % (
+                hb["n"], hb["n_back"], format(hb["max_back"], ","),
+                "(约 %s 秒)" % hb["sec_back"] if hb["sec_back"] else ""))
 
     # 4) historical blocks: a depth never answered / answered only sometimes
     hist = [(mid, pm[mid]) for mid in HIST if mid in pm and pm[mid]["total"]]
@@ -294,7 +422,8 @@ def build_embed(chains, bench, lc, overview):
         tot = sum(m["total"] for m in methods_avail if m["group"] in groups)
         return (round(ok / tot * 100, 1) if tot else None), ok, tot
 
-    reg_sr, reg_ok, reg_tot = group_avail({"simple", "complex"})
+    reg_sr, reg_ok, reg_tot = group_avail(set(REGULAR))
+    a_sr, a_ok, a_tot = group_avail({"advanced"})
     h_sr, h_ok, h_tot = group_avail({"history"})
 
     # ---- latency per method (median across chains of per-chain p50 / p95) ----
@@ -307,13 +436,14 @@ def build_embed(chains, bench, lc, overview):
     hot_p50 = pct([m["p50"] for m in methods_latency if m["p50"] is not None], 50)
     lat_samples = max((c["lat"][mid]["total"] for c in chains for mid in lat_mids), default=0)
 
-    # ---- regular-method failures ----
+    # ---- regular + advanced method failures ----
     failures = []
     for c in chains:
         for mid, m in c["methods"].items():
             if m["group"] != "history" and m["total"] and m["ok"] < m["total"]:
-                failures.append({"chainId": c["chainId"], "name": c["name"], "method": mid, "group": m["group"],
-                                 "ok": m["ok"], "total": m["total"], "kind": m["kind"] or "other", "msg": m["err"]})
+                failures.append({"chainId": c["chainId"], "name": c["name"], "method": method_label(mid),
+                                 "group": m["group"], "ok": m["ok"], "total": m["total"],
+                                 "kind": m["kind"] or "other", "msg": m["err"]})
 
     # ---- historical blocks ----
     depths = []
@@ -371,6 +501,11 @@ def build_embed(chains, bench, lc, overview):
                    "p50": c["lat"]["eth_blockNumber"]["p50"], "p95": c["lat"]["eth_blockNumber"]["p95"]}
                   for c in sorted(jit, key=lambda c: -c["lat"]["eth_blockNumber"]["jitter"])[:10]]
 
+    # ---- head went backwards ----
+    head_back_rows = sorted([dict(c["head_back"], chainId=c["chainId"], name=c["name"], tier=c["tier"])
+                             for c in chains if c["head_back"] and c["head_back"]["n_back"]],
+                            key=lambda r: (-r["max_back"], r["chainId"]))
+
     # ---- per-chain issues ----
     issue_rows = [{"chainId": c["chainId"], "name": c["name"], "tier": c["tier"], "active": c["active"],
                    "issues": [i for i in c["issues"] if i["level"] != "info"]}
@@ -390,15 +525,18 @@ def build_embed(chains, bench, lc, overview):
             "n_chains": len(chains),
             "catalog": overview.get("chains", {}).get("catalog"),
             "endpoints_active": overview.get("endpoints", {}).get("active"),
-            "bench_calls": reg_tot + h_tot, "bench_samples": bmeta.get("samples"),
+            "bench_calls": reg_tot + a_tot + h_tot, "bench_samples": bmeta.get("samples"),
             "bench_interval": bmeta.get("interval"),
             "latcache_calls": sum(c["lat"][m]["total"] for c in chains for m in lat_mids)
-                              + sum(c["cache"]["reps"] + c["cache"]["latest"]["reps"] for c in chains),
+                              + sum(c["cache"]["total"] + c["cache"]["latest"]["total"] for c in chains),
             "lat_samples": lat_samples,
+            "n_regular_methods": sum(1 for m in methods_avail if m["group"] in REGULAR),
+            "n_advanced_methods": sum(1 for m in methods_avail if m["group"] == "advanced"),
             "avail_regular": reg_sr, "avail_regular_ok": reg_ok, "avail_regular_total": reg_tot,
+            "avail_advanced": a_sr, "avail_advanced_ok": a_ok, "avail_advanced_total": a_tot,
             "avail_history": h_sr, "avail_history_ok": h_ok, "avail_history_total": h_tot,
             "hot_p50": hot_p50,
-            "thresholds": {"slow_cold_ms": SLOW_COLD_MS, "jitter_ms": JITTER_MS},
+            "thresholds": {"slow_cold_ms": SLOW_COLD_MS, "jitter_ms": JITTER_MS, "head_back": HEAD_BACK_WARN},
         },
         "error_kinds": {k: {"label": v[0], "desc": v[1]} for k, v in ERROR_KINDS.items()},
         "tiers": [{"tier": t, "label": TIER_LABELS[t], "count": tiers.get(t, 0)} for t in ("A-high", "B-medium", "C-low")],
@@ -411,13 +549,18 @@ def build_embed(chains, bench, lc, overview):
         "cache_top": cache_top,
         "cache_fail": cache_fail,
         "jitter_top": jitter_top,
+        "head_back": head_back_rows,
         "issue_rows": issue_rows,
         "issue_counts": issue_counts,
         "issue_meta": issue_meta,
         "all_chains": [{
             "chainId": c["chainId"], "name": c["name"], "sym": c["sym"], "tier": c["tier"],
             "active": c["active"], "sp": c["single_point"],
-            "avail": c["avail_regular"], "havail": c["avail_history"],
+            "avail": c["avail_regular"], "aavail": c["avail_advanced"], "havail": c["avail_history"],
+            "afail": [{"label": method_label(mid), "ok": m["ok"], "total": m["total"],
+                       "kind": m["kind"], "msg": m["err"], "skipped": m["skipped"]}
+                      for mid, m in c["methods"].items()
+                      if m["group"] == "advanced" and (m["ok"] < m["total"] or m["skipped"])],
             "p50": c["lat"].get("eth_blockNumber", {}).get("p50"),
             "cold": c["cache"]["cold"], "warm": c["cache"]["warm"], "speedup": c["cache"]["speedup"],
             "coldf": None if c["cache"]["cold"] is not None else {
@@ -434,14 +577,15 @@ def build_embed(chains, bench, lc, overview):
     }
 
 
-def inject(path, embed):
-    html = open(path, encoding="utf-8").read()
+def render(template, out, embed):
+    """Copy the template page to `out` with the data inlined into its <script id="data"> block."""
+    html = open(template, encoding="utf-8").read()
     data = json.dumps(embed, ensure_ascii=False).replace("</", "<\\/")
     pat = re.compile(r'(<script id="data" type="application/json">)(.*?)(</script>)', re.S)
     if not pat.search(html):
-        raise SystemExit("no <script id=\"data\"> block in %s" % path)
+        raise SystemExit("no <script id=\"data\"> block in %s" % template)
     html = pat.sub(lambda m: m.group(1) + data + m.group(3), html, count=1)
-    with open(path, "w", encoding="utf-8") as f:
+    with open(out, "w", encoding="utf-8") as f:
         f.write(html)
 
 

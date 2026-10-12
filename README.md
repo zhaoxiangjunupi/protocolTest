@@ -11,9 +11,12 @@
 - **分类**:按活跃节点冗余度把链分成 A 高 / B 中 / C 低(单点)三层,标记单点风险链。
 - **常规可用性 + 延迟**:对每条链跑一组简单方法(元数据)和复杂方法(最新区块 / 状态 / 日志),统计成功率与延迟分布。
 - **历史区块可用性**:在三个深度(近期 / 中期 / 早期)查历史区块,每次随机换区块,暴露"最新块能查、历史块查不到"的上游。
+- **进阶方法**:钱包 / dApp 常用的 `eth_call`、`eth_estimateGas`、交易回执、500 块区间的 `eth_getLogs`、批量请求。
+- **块高回退**:按顺序记录 `eth_blockNumber` 的返回值，发现"后一次比前一次还低"(路由器混用了高度不同的上游)。
 - **失败原因**:每次失败都记录错误原文,并归入一类(上游节点耗尽、上游缺少该区块、不支持该方法、限流、超时……)。
 - **稳定延迟 + 缓存冷热对比**:多轮采样得到稳定的 p50/p95/抖动;用随机近期区块区分"冷回源 vs 缓存命中",量化缓存带来的加速。
-- **汇总报告**:`build_report.py` 合并结果,生成自包含的 HTML 报告页(`rpc_report.html`):问题链汇总、按方法可用性、失败原因、历史区块、延迟、缓存、全部链明细(搜索 / 排序 / 筛选,悬停看错误原文),附名词解释。
+- **汇总报告**:`build_report.py` 合并结果，每次生成一份**新的**自包含 HTML 报告页(`rpc_report_<日期>_<时间>.html`,旧报告不动):问题链汇总、和上次对比、按方法可用性、失败原因、历史区块、延迟、缓存、抖动与块高回退、全部链明细(搜索 / 排序 / 筛选,悬停看错误原文),附名词解释。
+- **趋势对比**:每次运行的摘要存进 `runs/`,报告里列出最近 8 次的关键指标，以及和上次相比新出现 / 消失的问题链;问题链标出"持续"还是"偶发"。`run_all.sh` 一条命令跑完整轮，可以挂到 cron 上定时跑。
 
 ## 文件
 
@@ -23,8 +26,11 @@
 | `classify_chains.py` | 读链目录 → 分层,输出 `chains_classified.csv` |
 | `rpc_bench.py` | 可用性 + 延迟压测(逐链逐方法多次采样,含历史区块) |
 | `latency_cache.py` | 稳定延迟(多轮)+ 缓存冷/热对比 |
-| `build_report.py` | 合并上面两个脚本的结果 → `report_data.json` / `report_embed.json`,并写入 `rpc_report.html` |
-| `rpc_report.html` | 自包含的汇总报告页(数据已内联,浏览器直接打开) |
+| `build_report.py` | 合并上面两个脚本的结果 → `report_data.json` / `report_embed.json` / `runs/<时间>.json`,并用模板生成新的报告页 |
+| `run_all.sh` | 一条命令跑完整轮(拉快照 → 分类 → 可用性 → 延迟/缓存 → 报告) |
+| `report_template.html` | 报告页模板(数据块为空，由 `build_report.py` 填入) |
+| `rpc_report*.html` | 自包含的汇总报告页(数据已内联，浏览器直接打开),每次运行一份 |
+| `runs/` | 每次运行的摘要(测法、关键指标、每条链的问题),报告的趋势对比读它 |
 | `chains_all.json` | 链目录快照(来自 `/api/public/chains?limit=500`) |
 | `overview.json` | 路由器概览快照(来自 `/api/public/overview`,报告里的目录总数 / 活跃节点数) |
 | `chains_classified.csv` | 分层结果 |
@@ -49,8 +55,17 @@ python3 rpc_bench.py --chains 1,56,8453 --methods complex            # 指定 ch
 # 4) 稳定延迟 + 缓存冷/热
 python3 latency_cache.py --chains all --samples 12 --cache-blocks 10 --cache-reps 10
 
-# 5) 生成报告(自动取最新的 results_raw_* 和 results_latcache_raw_*)
+# 5) 生成报告(自动取最新的 results_raw_* 和 results_latcache_raw_*,输出 rpc_report_<日期>_<时间>.html)
 python3 build_report.py
+
+# 或者一条命令跑完 1)–5)
+./run_all.sh
+```
+
+定时跑(例如每 6 小时一次,`crontab -e`):
+
+```cron
+0 */6 * * * /home/ubuntu/zxj/protocolTest/run_all.sh >> /home/ubuntu/zxj/protocolTest/runs/cron.log 2>&1
 ```
 
 ### `rpc_bench.py` 参数
@@ -58,7 +73,7 @@ python3 build_report.py
 | 参数 | 说明 | 默认 |
 |------|------|------|
 | `--chains` | `all` / `traffic` / `majors` / 逗号分隔的 chainId | `traffic` |
-| `--methods` | `simple` / `complex` / `history` / `all` | `all` |
+| `--methods` | `simple` / `complex` / `advanced` / `history` / `all` | `all` |
 | `--samples` | 每个(链,方法)采样次数 | `10` |
 | `--concurrency` | 并行测试的链数 | `32` |
 | `--interval` | 同一条链两次请求之间的最小间隔(秒),0 = 不限速 | `0.5` |
@@ -87,12 +102,22 @@ python3 build_report.py
 |------|------|------|
 | `--bench` | `rpc_bench.py` 的 `results_raw_*.json` | 最新一个 |
 | `--latcache` | `latency_cache.py` 的 `results_latcache_raw_*.json` | 最新一个 |
-| `--html` | 要写入数据的报告页 | `rpc_report.html` |
+| `--template` | 报告页模板 | `report_template.html` |
+| `--html` | 输出的报告页(已存在会被覆盖) | `rpc_report_<日期>_<时间>.html`(按可用性测试的时间) |
+| `--runs` | 运行摘要目录(趋势对比用) | `runs` |
+
+趋势对比只和**更早**的运行比较(按可用性测试的时间),所以用旧结果重新生成报告也不会拿新数据去比。测法(采样次数、限速、是否复用连接等)也记在摘要里，测法不同的运行之间数字不能直接比较，报告里会标出来。
 
 ## 方法分组
 
 - **简单(轻量/元数据,多可缓存)**:`eth_chainId`、`eth_blockNumber`、`net_version`、`eth_gasPrice`、`web3_clientVersion`
 - **复杂(最新区块 / 状态 / 日志)**:`eth_getBlockByNumber(latest,true)`、`eth_getBalance`、`eth_getTransactionCount`、`eth_getLogs(latest)`
+- **进阶(钱包 / dApp 常用)**:
+  - `eth_call`:调用 `0x04` 预编译合约(identity),返回值必须原样回显输入，任何 EVM 链都不需要部署合约
+  - `eth_estimateGas`:零地址转 0 给 `0x…dEaD`
+  - `eth_getTransactionReceipt`:测试前从最近的区块(往回 2…1000 块)里取交易，都是空块时改用最近 500 块的日志里的交易;返回 `null` 也算失败(上游没建交易索引)
+  - `eth_getLogs` 区间：500 块区间，过滤一个不会产生日志的地址(响应很小，但上游必须支持区间查询);区间终点跟着最新看到的块高走(保证落在"只保留最近 1024 块"的节点范围内，不和历史区块测试混在一起),每次再错开 1 块，避免命中缓存
+  - 批量请求：一次 POST 发 `eth_chainId` / `eth_blockNumber` / `eth_gasPrice`,3 个都要有结果
 - **历史区块**:`eth_getBlockByNumber(区块号,false)`,以测试开始时实时查到的块高为基准:
   - 近期区块:head − 16…128
   - 中期区块:head − 5k…20k(超出"只保留最近 1024 块"的公共节点)
@@ -108,9 +133,10 @@ python3 build_report.py
 |------|------|
 | `exhausted` | 上游节点耗尽:路由器把该链的上游都试过了仍失败 |
 | `no_data` | 上游缺少该区块:节点只保留近期区块,或返回 `null` |
-| `unsupported` | 上游不支持该方法(含套餐限制) |
+| `unsupported` | 上游不支持该方法(含套餐限制、方法不在白名单) |
+| `range_limit` | 查询范围超限:`eth_getLogs` 等的区块范围或返回条数被上游限制 |
 | `rate_limited` | 上游限流 |
-| `timeout` / `conn` / `http` / `bad_response` | 超时 / 连接失败 / 非 200 / 响应格式异常 |
+| `timeout` / `conn` / `http` / `bad_response` | 超时 / 连接失败 / 非 200 / 响应格式异常或结果与预期不符(如 `eth_call` 回显不对) |
 | `wrong_chain` | `eth_chainId` 返回了别的链 |
 | `other` | 其他未归类错误 |
 
@@ -129,9 +155,19 @@ python3 build_report.py
 | 严重 | 历史区块查不到(近期) | 连最近 16–128 块都查不到 |
 | 警告 | 历史区块查不到 / 偶发失败 | 中期或早期区块全部 / 部分失败 |
 | 警告 | 常规请求失败 | 常规方法有任意一次失败 |
+| 警告 | 进阶方法失败 | 进阶方法有任意一次失败 |
+| 警告 / 提示 | 块高回退 | `eth_blockNumber` 比之前返回的块高低 ≥ 3 块为警告，1–2 块为提示 |
 | 警告 | 首次请求失败 / 缓存区块全部失败 | 缓存测试某个区块第 1 次失败 / 该区块全部失败 |
 | 警告 | 上游慢 | 冷回源 ≥ 1000 ms |
 | 提示 | 延迟抖动大 / 单点 | `eth_blockNumber` 标准差 ≥ 200 ms / 仅 1 个活跃节点 |
+
+## 最近一次实测(136 条链,2026-10-12 02:53 UTC,连接复用 · 10 次采样 · 限速 0.5s)
+
+- 常规请求可用率 **99.7%**,进阶方法 **97.4%**,历史区块 **93.8%**(近期 99.9% / 中期 97.4% / 早期 **84.0%**)。
+- 进阶方法的问题集中在：ZK Stack 系的链(zkSync、Lens、Cronos zkEVM、Abstract)`eth_estimateGas` 全部失败;部分上游限制 `eth_getLogs` 区间(以太坊主网有上游只给 10 块,World Chain / X Layer 只给 100 块);Filecoin、Unique、NV-CHAIN 的 `eth_call` 调预编译合约返回空。
+- 6 条链出现块高回退，最多回退 27 块(Astar)。
+- 命中缓存后的延迟 p50 **≈2ms**(之前的 ≈30ms 里约 20ms 是每次新建连接的握手);冷回源 194ms,缓存中位加速 **86×**。
+- 59 条链有警告级问题(没有严重问题),其中 26 条在最近 5 次运行里每次都有。
 
 ## 一次实测结论(135 条链,2026-10-10)
 

@@ -1,0 +1,1136 @@
+{
+ "ts": "20261012T021239Z",
+ "date": "2026-10-12 02:12 UTC",
+ "method": {
+  "samples": 10,
+  "interval": 0.5,
+  "keepalive": true,
+  "cache_blocks": 10,
+  "advanced": false
+ },
+ "kpi": {
+  "n_chains": 136,
+  "avail_regular": 99.7,
+  "avail_advanced": null,
+  "avail_history": 93.7,
+  "hot_p50": 3,
+  "cold_p50": 200,
+  "warm_p50": 2,
+  "speedup_med": 91.2,
+  "n_issue": 44,
+  "n_crit": 0,
+  "n_head_back": null
+ },
+ "chains": {
+  "1": {
+   "name": "Ethereum Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "8": {
+   "name": "c8ntinuum",
+   "level": 2,
+   "issues": [
+    [
+     "jitter",
+     "info",
+     "延迟抖动大"
+    ]
+   ]
+  },
+  "10": {
+   "name": "OP Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "14": {
+   "name": "Flare Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "19": {
+   "name": "Songbird Canary-Network",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "20": {
+   "name": "Elastos Smart Chain",
+   "level": 2,
+   "issues": [
+    [
+     "jitter",
+     "info",
+     "延迟抖动大"
+    ]
+   ]
+  },
+  "25": {
+   "name": "Cronos Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "29": {
+   "name": "Genesis L1",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ]
+   ]
+  },
+  "30": {
+   "name": "Rootstock Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "regular_fail",
+     "warn",
+     "常规请求失败"
+    ]
+   ]
+  },
+  "40": {
+   "name": "Telos EVM Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "42": {
+   "name": "LUKSO Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "46": {
+   "name": "Darwinia Network",
+   "level": 2,
+   "issues": [
+    [
+     "jitter",
+     "info",
+     "延迟抖动大"
+    ],
+    [
+     "single_point",
+     "info",
+     "单点"
+    ]
+   ]
+  },
+  "50": {
+   "name": "XDC Network",
+   "level": null,
+   "issues": []
+  },
+  "51": {
+   "name": "XDC Apothem Network",
+   "level": 2,
+   "issues": [
+    [
+     "jitter",
+     "info",
+     "延迟抖动大"
+    ]
+   ]
+  },
+  "56": {
+   "name": "BNB Smart Chain Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "regular_fail",
+     "warn",
+     "常规请求失败"
+    ],
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "57": {
+   "name": "Syscoin Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "58": {
+   "name": "Ontology Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "61": {
+   "name": "Ethereum Classic",
+   "level": null,
+   "issues": []
+  },
+  "66": {
+   "name": "OKXChain Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "75": {
+   "name": "Decimal Smart Chain Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ]
+   ]
+  },
+  "81": {
+   "name": "Japan Open Chain Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "100": {
+   "name": "Gnosis",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "106": {
+   "name": "Velas EVM Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ],
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "109": {
+   "name": "Shibarium",
+   "level": null,
+   "issues": []
+  },
+  "122": {
+   "name": "Fuse Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "130": {
+   "name": "Unichain",
+   "level": 1,
+   "issues": [
+    [
+     "regular_fail",
+     "warn",
+     "常规请求失败"
+    ],
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "137": {
+   "name": "Polygon Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "138": {
+   "name": "Defi Oracle Meta Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "143": {
+   "name": "Monad",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "146": {
+   "name": "Sonic Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "169": {
+   "name": "Manta Pacific Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "173": {
+   "name": "ENI Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "196": {
+   "name": "X Layer Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "199": {
+   "name": "BitTorrent Chain Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "204": {
+   "name": "opBNB Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "223": {
+   "name": "B2 Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "232": {
+   "name": "Lens",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ]
+   ]
+  },
+  "239": {
+   "name": "TAC Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "250": {
+   "name": "Fantom Opera",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "252": {
+   "name": "Fraxtal",
+   "level": null,
+   "issues": []
+  },
+  "254": {
+   "name": "Swan Chain Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "274": {
+   "name": "LaChain",
+   "level": 2,
+   "issues": [
+    [
+     "jitter",
+     "info",
+     "延迟抖动大"
+    ]
+   ]
+  },
+  "288": {
+   "name": "Boba Network",
+   "level": 2,
+   "issues": [
+    [
+     "jitter",
+     "info",
+     "延迟抖动大"
+    ]
+   ]
+  },
+  "295": {
+   "name": "Hedera Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "314": {
+   "name": "Filecoin - Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ],
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "321": {
+   "name": "KCC Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "324": {
+   "name": "zkSync Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "369": {
+   "name": "PulseChain",
+   "level": 1,
+   "issues": [
+    [
+     "regular_fail",
+     "warn",
+     "常规请求失败"
+    ],
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ],
+    [
+     "cold_fail",
+     "warn",
+     "首次请求失败"
+    ],
+    [
+     "jitter",
+     "info",
+     "延迟抖动大"
+    ]
+   ]
+  },
+  "388": {
+   "name": "Cronos zkEVM Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "463": {
+   "name": "Areum Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "480": {
+   "name": "World Chain",
+   "level": null,
+   "issues": []
+  },
+  "520": {
+   "name": "XT Smart Chain Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "570": {
+   "name": "Rollux Mainnet",
+   "level": 2,
+   "issues": [
+    [
+     "single_point",
+     "info",
+     "单点"
+    ]
+   ]
+  },
+  "592": {
+   "name": "Astar",
+   "level": null,
+   "issues": []
+  },
+  "686": {
+   "name": "Karura Network",
+   "level": 2,
+   "issues": [
+    [
+     "single_point",
+     "info",
+     "单点"
+    ]
+   ]
+  },
+  "766": {
+   "name": "QL1",
+   "level": 2,
+   "issues": [
+    [
+     "jitter",
+     "info",
+     "延迟抖动大"
+    ]
+   ]
+  },
+  "787": {
+   "name": "Acala Network",
+   "level": null,
+   "issues": []
+  },
+  "813": {
+   "name": "Qitmeer Network Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "988": {
+   "name": "Stable Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "999": {
+   "name": "HyperEVM",
+   "level": null,
+   "issues": []
+  },
+  "1009": {
+   "name": "Jumbochain Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "1088": {
+   "name": "Metis Andromeda Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "regular_fail",
+     "warn",
+     "常规请求失败"
+    ]
+   ]
+  },
+  "1089": {
+   "name": "Humans.ai Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ],
+    [
+     "single_point",
+     "info",
+     "单点"
+    ]
+   ]
+  },
+  "1100": {
+   "name": "Dymension",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ],
+    [
+     "jitter",
+     "info",
+     "延迟抖动大"
+    ]
+   ]
+  },
+  "1101": {
+   "name": "Polygon zkEVM",
+   "level": null,
+   "issues": []
+  },
+  "1116": {
+   "name": "Core Blockchain Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "1135": {
+   "name": "Lisk",
+   "level": null,
+   "issues": []
+  },
+  "1284": {
+   "name": "Moonbeam",
+   "level": null,
+   "issues": []
+  },
+  "1285": {
+   "name": "Moonriver",
+   "level": null,
+   "issues": []
+  },
+  "1287": {
+   "name": "Moonbase Alpha",
+   "level": null,
+   "issues": []
+  },
+  "1319": {
+   "name": "AIA Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "1329": {
+   "name": "Sei Network",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ]
+   ]
+  },
+  "1514": {
+   "name": "Data Network",
+   "level": null,
+   "issues": []
+  },
+  "1868": {
+   "name": "Soneium",
+   "level": null,
+   "issues": []
+  },
+  "2020": {
+   "name": "Ronin",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "2031": {
+   "name": "Centrifuge",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ]
+   ]
+  },
+  "2222": {
+   "name": "Kava",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "2340": {
+   "name": "Atleta Olympia",
+   "level": 2,
+   "issues": [
+    [
+     "single_point",
+     "info",
+     "单点"
+    ]
+   ]
+  },
+  "2440": {
+   "name": "Atleta Network",
+   "level": null,
+   "issues": []
+  },
+  "2741": {
+   "name": "Abstract",
+   "level": 1,
+   "issues": [
+    [
+     "regular_fail",
+     "warn",
+     "常规请求失败"
+    ]
+   ]
+  },
+  "2818": {
+   "name": "Morph",
+   "level": null,
+   "issues": []
+  },
+  "2999": {
+   "name": "BitYuan Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "3338": {
+   "name": "peaq",
+   "level": null,
+   "issues": []
+  },
+  "3797": {
+   "name": "AlveyChain Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "4200": {
+   "name": "Merlin Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "4326": {
+   "name": "MegaETH",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "4663": {
+   "name": "Robinhood Chain",
+   "level": 2,
+   "issues": [
+    [
+     "jitter",
+     "info",
+     "延迟抖动大"
+    ]
+   ]
+  },
+  "4689": {
+   "name": "IoTeX Network Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "5000": {
+   "name": "Mantle",
+   "level": null,
+   "issues": []
+  },
+  "5042": {
+   "name": "Arc",
+   "level": null,
+   "issues": []
+  },
+  "6999": {
+   "name": "PolySmartChain",
+   "level": null,
+   "issues": []
+  },
+  "7000": {
+   "name": "ZetaChain Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "8217": {
+   "name": "Kaia Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "8453": {
+   "name": "Base",
+   "level": 1,
+   "issues": [
+    [
+     "regular_fail",
+     "warn",
+     "常规请求失败"
+    ],
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "8822": {
+   "name": "IOTA EVM",
+   "level": 1,
+   "issues": [
+    [
+     "regular_fail",
+     "warn",
+     "常规请求失败"
+    ]
+   ]
+  },
+  "8880": {
+   "name": "Unique",
+   "level": null,
+   "issues": []
+  },
+  "9745": {
+   "name": "Plasma Mainnet",
+   "level": 2,
+   "issues": [
+    [
+     "single_point",
+     "info",
+     "单点"
+    ]
+   ]
+  },
+  "10000": {
+   "name": "Smart Bitcoin Cash",
+   "level": 2,
+   "issues": [
+    [
+     "single_point",
+     "info",
+     "单点"
+    ]
+   ]
+  },
+  "11235": {
+   "name": "Haqq Network",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ]
+   ]
+  },
+  "12306": {
+   "name": "Fibonacci Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "13371": {
+   "name": "Immutable zkEVM",
+   "level": null,
+   "issues": []
+  },
+  "24734": {
+   "name": "MintMe.com Coin",
+   "level": null,
+   "issues": []
+  },
+  "31612": {
+   "name": "Mezo",
+   "level": null,
+   "issues": []
+  },
+  "34443": {
+   "name": "Mode",
+   "level": null,
+   "issues": []
+  },
+  "42161": {
+   "name": "Arbitrum One",
+   "level": 1,
+   "issues": [
+    [
+     "regular_fail",
+     "warn",
+     "常规请求失败"
+    ],
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "42170": {
+   "name": "Arbitrum Nova",
+   "level": null,
+   "issues": []
+  },
+  "42220": {
+   "name": "Celo Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "42262": {
+   "name": "Oasis Emerald",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ],
+    [
+     "single_point",
+     "info",
+     "单点"
+    ]
+   ]
+  },
+  "43114": {
+   "name": "Avalanche C-Chain",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "48900": {
+   "name": "Zircuit Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "57073": {
+   "name": "Ink",
+   "level": null,
+   "issues": []
+  },
+  "59144": {
+   "name": "Linea",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "60808": {
+   "name": "BOB",
+   "level": null,
+   "issues": []
+  },
+  "71111": {
+   "name": "GuapcoinX",
+   "level": null,
+   "issues": []
+  },
+  "73115": {
+   "name": "ICB Network",
+   "level": null,
+   "issues": []
+  },
+  "73790": {
+   "name": "NV-CHAIN",
+   "level": null,
+   "issues": []
+  },
+  "78281": {
+   "name": "Dragonfly Mainnet (Hexapod)",
+   "level": null,
+   "issues": []
+  },
+  "80094": {
+   "name": "Berachain",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "81457": {
+   "name": "Blast",
+   "level": null,
+   "issues": []
+  },
+  "88888": {
+   "name": "Chiliz Chain",
+   "level": null,
+   "issues": []
+  },
+  "98866": {
+   "name": "Plume Mainnet",
+   "level": 2,
+   "issues": [
+    [
+     "single_point",
+     "info",
+     "单点"
+    ]
+   ]
+  },
+  "167000": {
+   "name": "Taiko",
+   "level": null,
+   "issues": []
+  },
+  "200901": {
+   "name": "Bitlayer Mainnet",
+   "level": 2,
+   "issues": [
+    [
+     "single_point",
+     "info",
+     "单点"
+    ]
+   ]
+  },
+  "222222": {
+   "name": "Hydration",
+   "level": 1,
+   "issues": [
+    [
+     "history_missing",
+     "warn",
+     "历史区块查不到"
+    ]
+   ]
+  },
+  "240241": {
+   "name": "Studio Blockchain Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "534352": {
+   "name": "Scroll",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "747474": {
+   "name": "katana",
+   "level": null,
+   "issues": []
+  },
+  "955305": {
+   "name": "Eluvio Content Fabric",
+   "level": null,
+   "issues": []
+  },
+  "2632500": {
+   "name": "COTI",
+   "level": null,
+   "issues": []
+  },
+  "7777777": {
+   "name": "Zora",
+   "level": null,
+   "issues": []
+  },
+  "11155111": {
+   "name": "Ethereum Sepolia",
+   "level": 1,
+   "issues": [
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "20181205": {
+   "name": "quarkblockchain",
+   "level": 2,
+   "issues": [
+    [
+     "single_point",
+     "info",
+     "单点"
+    ]
+   ]
+  },
+  "728126428": {
+   "name": "Tron Mainnet",
+   "level": 1,
+   "issues": [
+    [
+     "regular_fail",
+     "warn",
+     "常规请求失败"
+    ],
+    [
+     "history_flaky",
+     "warn",
+     "历史区块偶发失败"
+    ]
+   ]
+  },
+  "1313161554": {
+   "name": "Aurora Mainnet",
+   "level": null,
+   "issues": []
+  },
+  "1666600000": {
+   "name": "Harmony Mainnet Shard 0",
+   "level": null,
+   "issues": []
+  },
+  "1666600001": {
+   "name": "Harmony Mainnet Shard 1",
+   "level": null,
+   "issues": []
+  }
+ }
+}

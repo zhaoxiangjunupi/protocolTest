@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RPC 路由器体检报告</title>
+<meta name="description" content="cryptostack RPC 路由器多链体检:分类、常规与历史区块可用性、失败原因、延迟与缓存">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+  /* Layout: single editorial column of telemetry cards; mono kickers + figures, system-sans body */
+  :root{
+    color-scheme: light;
+    --bg:#f4f3ef; --surface:#ffffff; --surface-2:#f6f5f1; --raise:#fbfbf9;
+    --fg:#0b0b0b; --fg-2:#52514e; --muted:#898781;
+    --grid:#e4e3dc; --border:rgba(11,11,11,.11); --border-strong:rgba(11,11,11,.18);
+    --accent:#2a78d6; --s-blue:#2a78d6; --s-orange:#eb6834; --s-aqua:#1baf7a; --s-violet:#7b5cc4;
+    --good:#0ca30c; --warn:#d98b00; --crit:#d03b3b;
+    --good-ink:#0a7a0a; --warn-ink:#a06500; --crit-ink:#c0302f;
+    --tierA:#184f95; --tierB:#3987e5; --tierC:#9ec5f4;
+    --shadow:0 1px 2px rgba(11,11,11,.05),0 1px 0 rgba(11,11,11,.03);
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#0c0c0c; --surface:#191918; --surface-2:#211f1e; --raise:#201e1d;
+    --fg:#f0efec; --fg-2:#c3c2b7; --muted:#8f8d86;
+    --grid:#2c2c2a; --border:rgba(255,255,255,.11); --border-strong:rgba(255,255,255,.2);
+    --accent:#3987e5; --s-blue:#3987e5; --s-orange:#e2703f; --s-aqua:#2bb98a; --s-violet:#9a7fe0;
+    --good:#0ca30c; --warn:#fab219; --crit:#e05a5a;
+    --good-ink:#2fb82f; --warn-ink:#f0b53a; --crit-ink:#e86a6a;
+    --tierA:#9ec5f4; --tierB:#3987e5; --tierC:#1c5cab;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }}
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --bg:#0c0c0c; --surface:#191918; --surface-2:#211f1e; --raise:#201e1d;
+    --fg:#f0efec; --fg-2:#c3c2b7; --muted:#8f8d86;
+    --grid:#2c2c2a; --border:rgba(255,255,255,.11); --border-strong:rgba(255,255,255,.2);
+    --accent:#3987e5; --s-blue:#3987e5; --s-orange:#e2703f; --s-aqua:#2bb98a; --s-violet:#9a7fe0;
+    --good:#0ca30c; --warn:#fab219; --crit:#e05a5a;
+    --good-ink:#2fb82f; --warn-ink:#f0b53a; --crit-ink:#e86a6a;
+    --tierA:#9ec5f4; --tierB:#3987e5; --tierC:#1c5cab;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.5;
+       -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1100px;margin:0 auto;padding-inline:20px;padding-block:0 72px;}
+  .tnum{font-variant-numeric:tabular-nums}
+  code{font-family:var(--mono);font-size:.92em;background:var(--surface-2);padding:1px 6px;border-radius:4px;border:1px solid var(--border)}
+
+  /* masthead */
+  header.mast{padding-block:40px 24px;border-bottom:1px solid var(--border-strong);margin-bottom:28px;}
+  .kick{font-family:var(--mono);font-weight:500;font-size:12px;letter-spacing:.14em;
+        text-transform:uppercase;color:var(--muted);}
+  h1{font-family:var(--mono);font-weight:700;font-size:clamp(26px,5vw,40px);line-height:1.08;
+     margin:.3em 0 .35em;text-wrap:balance;letter-spacing:-.01em;}
+  .sub{color:var(--fg-2);font-size:15px;max-width:72ch;margin:0}
+  .sub b{color:var(--fg)}
+  .metaline{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:16px;font-family:var(--mono);
+            font-size:12.5px;color:var(--fg-2);}
+  .metaline b{color:var(--fg);font-weight:700}
+  .metaline a{color:var(--accent);text-decoration:none}
+
+  /* KPI tiles */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:34px;}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:16px 16px 14px;
+       box-shadow:var(--shadow);min-width:0;}
+  .kpi .lab{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+  .kpi .val{font-size:clamp(26px,4vw,34px);font-weight:700;line-height:1.05;margin-top:7px;letter-spacing:-.02em;}
+  .kpi .val small{font-size:.5em;font-weight:600;color:var(--fg-2);margin-left:2px}
+  .kpi .note{font-size:12px;color:var(--fg-2);margin-top:4px}
+  .kpi.good .val{color:var(--good-ink)} .kpi.warn .val{color:var(--warn-ink)} .kpi.crit .val{color:var(--crit-ink)}
+
+  section{margin-bottom:38px;}
+  .sechead{display:flex;align-items:baseline;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+  h2{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+     color:var(--accent);margin:0;}
+  h3.sm{font-family:var(--mono);font-size:12.5px;font-weight:700;margin:22px 0 8px;color:var(--fg)}
+  .secsub{color:var(--fg-2);font-size:13.5px;margin:2px 0 16px;max-width:80ch}
+  .secsub b{color:var(--fg)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:20px 22px;
+        box-shadow:var(--shadow);}
+  .howto{font-size:12.5px;color:var(--fg-2);background:var(--surface-2);border:1px solid var(--border);
+         border-left:3px solid var(--accent);border-radius:7px;padding:10px 13px;margin:0 0 14px;max-width:80ch}
+  .howto b{color:var(--fg)}
+
+  /* glossary */
+  .gloss{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 26px}
+  .gloss .gi{display:grid;grid-template-columns:118px 1fr;gap:10px;align-items:baseline;font-size:13px;
+             padding-bottom:10px;border-bottom:1px dashed var(--grid)}
+  .gloss .gk{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--fg)}
+  .gloss .gv{color:var(--fg-2)}
+  .gloss .gv b{color:var(--fg)}
+
+  /* tiers bar */
+  .tierbar{display:flex;height:34px;border-radius:7px;overflow:hidden;border:1px solid var(--border);}
+  .tierseg{display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--mono);
+           font-weight:700;font-size:13px;min-width:0;}
+  .tierlegend{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:14px;font-size:13px;color:var(--fg-2)}
+  .tierlegend .dot{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+  .tagrow{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+  .tag{font-size:12.5px;padding:5px 11px;border-radius:999px;border:1px solid var(--border);
+       background:var(--surface-2);color:var(--fg-2)}
+  .tag b{color:var(--fg)}
+
+  /* generic horizontal bar rows */
+  .bars{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .barrow{display:grid;grid-template-columns:178px 1fr;gap:12px;align-items:center}
+  .barrow.f3{grid-template-columns:178px 1fr 64px}
+  .barrow .fc{font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--crit-ink);white-space:nowrap}
+  .barrow .name{font-size:13px;color:var(--fg-2);text-align:right;min-width:0;overflow:hidden;
+                text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .barrow .name small{color:var(--muted);font-family:var(--mono);font-size:10.5px;margin-left:4px}
+  .track{position:relative;height:22px;background:var(--surface-2);border-radius:5px;overflow:hidden}
+  .fill{height:100%;border-radius:5px;display:flex;align-items:center}
+  .fill .vlab{font-family:var(--mono);font-size:11.5px;font-weight:700;color:#fff;padding:0 8px;white-space:nowrap}
+  .vlab.out{color:var(--fg);position:absolute;left:100%;padding-left:8px;top:0;height:100%;display:flex;align-items:center;
+            font-family:var(--mono);font-size:11.5px;font-weight:700;white-space:nowrap}
+  .failnote{font-family:var(--mono);font-size:11px;color:var(--crit-ink);margin-left:8px;font-weight:700}
+
+  /* cache cold->warm rows */
+  .crow{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:center}
+  .crow .cn{font-size:13px;text-align:right;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .crow .cn small{color:var(--muted);font-family:var(--mono);font-size:11px;margin-left:5px}
+  .cbarwrap{position:relative;height:24px;background:var(--surface-2);border-radius:5px}
+  .cbar{position:absolute;left:0;top:0;height:100%;border-radius:5px;background:var(--s-orange)}
+  .cann{position:absolute;top:0;height:100%;display:flex;align-items:center;gap:8px;
+        font-family:var(--mono);font-size:11.5px;white-space:nowrap;padding-left:9px}
+  .cann .cold{color:#fff;font-weight:700}
+  .cann.dark .cold{color:var(--fg)}
+  .cann .sx{color:var(--s-aqua);font-weight:700}
+  .cann .warm{color:var(--fg-2)}
+  .cann:not(.dark) .warm{color:rgba(255,255,255,.88)}
+  .cann:not(.dark) .sx{color:#fff}
+
+  /* depth tiles (history) */
+  .dtiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .dtile{border:1px solid var(--border);border-radius:9px;padding:13px 15px;background:var(--surface-2);min-width:0}
+  .dtile .dl{font-family:var(--mono);font-size:12px;font-weight:700}
+  .dtile .dw{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .dtile .dv{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-top:6px;line-height:1.1}
+  .dtile .dv small{font-size:.5em;color:var(--fg-2);font-weight:600}
+  .dtile .dn{font-size:12px;color:var(--fg-2);margin-top:4px}
+  .dtile .dd{font-size:12px;color:var(--fg-2);margin-top:8px;border-top:1px dashed var(--grid);padding-top:8px}
+
+  /* tables */
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{padding:9px 12px;text-align:left;white-space:nowrap;vertical-align:top}
+  thead th{font-family:var(--mono);font-size:11px;letter-spacing:.04em;
+           color:var(--fg-2);border-bottom:1px solid var(--border-strong);position:sticky;top:0;
+           background:var(--surface);user-select:none;vertical-align:bottom;font-weight:700;z-index:1}
+  thead th small{display:block;font-weight:500;font-size:10px;color:var(--muted);letter-spacing:0;margin-top:2px}
+  thead th.num small{text-align:right}
+  table.sortable thead th{cursor:pointer}
+  thead th.sorted::after{content:" ▾";color:var(--accent)}
+  thead th.asc.sorted::after{content:" ▴"}
+  tbody tr{border-top:1px solid var(--grid)}
+  tbody tr:hover{background:var(--surface-2)}
+  td.num,th.num{text-align:right}
+  td.num{font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:12px}
+  td.long{white-space:normal;min-width:280px;max-width:520px;font-size:12px;color:var(--fg-2);line-height:1.45}
+  td.long .err{font-family:var(--mono);font-size:11px;color:var(--muted);word-break:break-word}
+  .pill{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:.03em}
+  .pill.A{background:color-mix(in srgb,var(--tierA) 22%,transparent);color:var(--tierA)}
+  .pill.B{background:color-mix(in srgb,var(--tierB) 20%,transparent);color:var(--tierB)}
+  .pill.C{background:color-mix(in srgb,var(--s-blue) 14%,transparent);color:var(--fg-2)}
+  .dotok{color:var(--good-ink)} .dotsp{color:var(--warn-ink);font-size:11px;font-family:var(--mono)}
+
+  /* status marks */
+  .badge{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:5px;
+         letter-spacing:.02em;line-height:1.6;white-space:nowrap}
+  .badge.fail{background:color-mix(in srgb,var(--crit) 16%,transparent);color:var(--crit-ink);border:1px solid color-mix(in srgb,var(--crit) 35%,transparent)}
+  .badge.part{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn-ink);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
+  .badge.ok{background:color-mix(in srgb,var(--good) 12%,transparent);color:var(--good-ink);border:1px solid color-mix(in srgb,var(--good) 28%,transparent)}
+  .badge.skip{background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+  .na{color:var(--muted)}
+  .chip{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:999px;margin:1px 4px 1px 0;white-space:nowrap;border:1px solid}
+  .chip.crit{color:var(--crit-ink);border-color:color-mix(in srgb,var(--crit) 40%,transparent);background:color-mix(in srgb,var(--crit) 10%,transparent)}
+  .chip.warn{color:var(--warn-ink);border-color:color-mix(in srgb,var(--warn) 40%,transparent);background:color-mix(in srgb,var(--warn) 10%,transparent)}
+  .chip.info{color:var(--fg-2);border-color:var(--border-strong);background:var(--surface-2)}
+  .chip.okc{color:var(--good-ink);border-color:color-mix(in srgb,var(--good) 30%,transparent)}
+  .v-warn{color:var(--warn-ink);font-weight:700} .v-crit{color:var(--crit-ink);font-weight:700}
+  [data-ti]{cursor:help}
+  [data-ti].badge, [data-ti].chip{text-decoration:none}
+
+  /* failures */
+  .failgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .failcard{border:1px solid var(--border);border-radius:9px;padding:14px 16px;background:var(--surface-2)}
+  .failcard h3{margin:0 0 2px;font-size:13.5px;font-family:var(--mono);font-weight:700;color:var(--warn-ink)}
+  .failcard.exhausted h3{color:var(--crit-ink)}
+  .failcard.good h3{color:var(--good-ink)}
+  .failcard.bad h3{color:var(--crit-ink)}
+  .kpi .note .up{color:var(--good-ink);font-weight:700} .kpi .note .down{color:var(--crit-ink);font-weight:700}
+  tr.cur td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+  .seq{font-family:var(--mono);font-size:11px;color:var(--fg-2);white-space:normal;min-width:260px;max-width:520px;line-height:1.6}
+  .seq .lo{color:var(--crit-ink);font-weight:700}
+  .failcard .kd{font-size:12px;color:var(--fg-2);margin:0 0 6px}
+  .failcard ul{margin:8px 0 0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+  .failcard li{font-size:12.5px;color:var(--fg-2);line-height:1.4}
+  .failcard li b{color:var(--fg);font-family:var(--mono);font-weight:700;font-size:12px}
+  .failcard .m{display:block;color:var(--muted);font-size:11.5px;font-family:var(--mono);margin-top:1px;word-break:break-word}
+
+  /* controls */
+  .ctrls{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;align-items:center}
+  .ctrls input[type=text],.ctrls select{font:inherit;font-size:13px;padding:7px 11px;border:1px solid var(--border-strong);
+       border-radius:7px;background:var(--surface);color:var(--fg)}
+  .ctrls input[type=text]{min-width:160px;flex:1 1 180px;max-width:280px}
+  .ctrls .count{font-family:var(--mono);font-size:12px;color:var(--muted);margin-left:auto}
+  .legendrow{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:var(--fg-2);margin:0 0 12px}
+
+  /* methodology */
+  pre{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:14px 16px;
+      overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.6;color:var(--fg);margin:16px 0 0}
+  .mlist{display:grid;gap:10px;margin-top:4px}
+  .mlist .mi{display:grid;grid-template-columns:150px 1fr;gap:14px;font-size:13.5px;align-items:baseline}
+  .mlist .mi .k{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700}
+  .mlist .mi .v{color:var(--fg-2)}
+
+  footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--border);
+         font-size:12.5px;color:var(--muted);font-family:var(--mono);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+
+  /* tooltip */
+  #tip{position:fixed;pointer-events:none;z-index:50;background:var(--fg);color:var(--bg);
+       font-family:var(--sans);font-size:12px;padding:8px 11px;border-radius:7px;opacity:0;
+       transition:opacity .08s;max-width:340px;box-shadow:0 4px 14px rgba(0,0,0,.25);line-height:1.5}
+  #tip b{font-weight:700}
+  #tip .tm{font-family:var(--mono);font-size:11px;opacity:.8;word-break:break-word;display:block;margin-top:3px}
+
+  .legend-inline{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--fg-2);margin-bottom:14px}
+  .legend-inline .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+  @media (max-width:720px){
+    .wrap{padding-inline:16px}
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    .failgrid,.gloss,.dtiles{grid-template-columns:1fr}
+    .gloss .gi{grid-template-columns:1fr;gap:2px}
+    .barrow{grid-template-columns:118px 1fr}
+    .crow{grid-template-columns:110px 1fr}
+    .barrow .name{font-size:12px}
+    .mlist .mi{grid-template-columns:1fr;gap:2px}
+    .card{padding:16px 15px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div class="kick">多链 RPC 体检 · Availability · History · Latency · Cache</div>
+    <h1>RPC 路由器体检报告</h1>
+    <p class="sub" id="summary"></p>
+    <div class="metaline" id="metaline"></div>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+
+  <section>
+    <div class="sechead"><h2>00 · 怎么读这份报告</h2></div>
+    <p class="secsub">报告里所有名词和标记的含义。表格里带下划虚线或标记的格子，鼠标悬停（手机上点一下）能看到详细原因和错误原文。</p>
+    <div class="card"><div class="gloss" id="gloss"></div></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>01 · 链分类</h2></div>
+    <p class="secsub">按<b>活跃上游节点数</b>分三层。节点越少，单点故障风险越高。C 层里只有 1 个活跃节点的是<b>单点链</b>，这个节点一挂整条链就不可用。</p>
+    <div class="card">
+      <div class="tierbar" id="tierbar"></div>
+      <div class="tierlegend" id="tierlegend"></div>
+      <div class="tagrow" id="tiertags"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>02 · 问题链汇总</h2></div>
+    <p class="secsub" id="issuesub"></p>
+    <div class="tagrow" id="issuechips" style="margin:0 0 14px"></div>
+    <div class="tablewrap" style="max-height:560px;overflow-y:auto">
+      <table id="issuetable"><thead><tr>
+        <th>链</th><th class="num">chainId</th><th>层</th>
+        <th>级别</th><th>最近几次<small>是否反复出现</small></th><th>问题<small>悬停看说明</small></th><th>详情<small>测试中观察到的情况 + 错误原文</small></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>03 · 和上次对比</h2></div>
+    <p class="secsub" id="trendsub"></p>
+    <div class="tablewrap">
+      <table id="trendtable"><thead><tr>
+        <th>采集时间</th><th>测法</th>
+        <th class="num">链数</th>
+        <th class="num">常规可用率<small>%</small></th>
+        <th class="num">进阶可用率<small>%</small></th>
+        <th class="num">历史可用率<small>%</small></th>
+        <th class="num">热路径 p50<small>ms</small></th>
+        <th class="num">冷回源 p50<small>ms</small></th>
+        <th class="num">缓存命中 p50<small>ms</small></th>
+        <th class="num">问题链<small>严重 / 警告</small></th>
+        <th class="num">块高回退<small>链数</small></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+    <div class="failgrid" id="trendchanges" style="margin-top:14px"></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>04 · 可用性（按方法）</h2></div>
+    <p class="secsub" id="availsub"></p>
+    <div class="card">
+      <div class="legend-inline">
+        <span><span class="sw" style="background:var(--s-blue)"></span>简单方法（元数据）</span>
+        <span><span class="sw" style="background:var(--s-orange)"></span>复杂方法（最新区块 / 状态 / 日志）</span>
+        <span><span class="sw" style="background:var(--s-aqua)"></span>进阶方法（eth_call / 估算 gas / 交易回执 / 区间日志 / 批量请求）</span>
+        <span><span class="sw" style="background:var(--s-violet)"></span>历史区块（3 个深度）</span>
+      </div>
+      <div class="bars" id="availbars"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>05 · 失败原因（常规与进阶方法）</h2></div>
+    <p class="secsub" id="failsub"></p>
+    <div class="failgrid" id="failgrid"></div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>06 · 历史区块可用性</h2></div>
+    <p class="secsub">最新区块能查，不代表历史区块也能查。很多上游节点只保留最近一段区块，查更早的会报错或返回空。每条链在三个深度各查 <b id="hsamples"></b> 次，<b>每次随机换一个区块</b>，保证不命中缓存、真正打到上游。<b>返回空（null）也算失败。</b></p>
+    <div class="howto"><b>怎么理解：</b><b>部分失败</b>（有成功也有失败）说明上游池里有的节点有这段数据、有的没有，路由器把请求分到没数据的节点时没有自动换节点重试；<b>全部失败</b>（一次都没成功）说明这条链所有上游都没有这段数据，用户根本查不到；<b>未测</b>是链太短，取不到这个深度的区块。</div>
+    <div class="dtiles" id="dtiles"></div>
+    <h3 class="sm" id="htitle"></h3>
+    <div class="tablewrap" style="max-height:520px;overflow-y:auto">
+      <table id="histtable"><thead><tr>
+        <th>链</th><th class="num">chainId</th><th>层</th>
+        <th id="h-hist_recent">近期区块</th><th id="h-hist_mid">中期区块</th><th id="h-hist_early">早期区块</th>
+        <th>主要原因<small>出现最多的错误</small></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>07 · 热路径延迟</h2></div>
+    <p class="secsub" id="latsub"></p>
+    <div class="card">
+      <div class="legend-inline">
+        <span><span class="sw" style="background:var(--s-blue)"></span>p50（中位数：一半请求比它快）</span>
+        <span><span class="sw" style="background:var(--grid);border:1px solid var(--border-strong)"></span>p50 → p95 区间（p95：只有 5% 的请求比它慢）</span>
+      </div>
+      <div class="bars" id="latbars"></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>08 · 缓存价值</h2></div>
+    <p class="secsub" id="cachesub"></p>
+    <div class="howto"><b>测法：</b>每条链随机挑 <b id="cblocks"></b> 个近期区块（最新块往前 200–800 块，未被缓存、但普通节点也都保留），每个区块对同一个 <code>eth_getBlockByNumber</code> 请求连发 <b id="creps"></b> 次。<b>冷回源</b> = 各区块第 1 次耗时的中位数（缓存里没有，要去上游取）；<b>缓存命中</b> = 其余请求耗时的中位数；<b>加速</b> = 冷回源 ÷ 缓存命中。<br>
+      <b>注意：</b>加速倍数高说明<b>上游慢</b>、缓存在帮它兜底，但用户第一次查或查不可缓存的数据时照样慢，这些链的上游更该优化。</div>
+    <div class="card">
+      <div class="legend-inline">
+        <span><span class="sw" style="background:var(--s-orange)"></span>橙条长度 = 冷回源耗时</span>
+        <span>右侧标注：冷回源 ms → 缓存命中 ms · <b style="color:var(--s-aqua)">加速倍数</b></span>
+      </div>
+      <div class="bars" id="cachebars" style="gap:10px"></div>
+    </div>
+    <h3 class="sm" id="cftitle"></h3>
+    <p class="secsub" style="margin-bottom:10px">这些链有区块的第 1 次请求失败，失败的区块不计入冷回源中位数；所有区块都失败的链拿不到冷回源耗时，不计入加速统计，全部链明细里它们的冷回源列显示 <span class="badge fail">失败</span>。下表的原因、耗时和后续结果取第一个失败的区块。</p>
+    <div class="tablewrap" style="max-height:460px;overflow-y:auto">
+      <table id="cftable"><thead><tr>
+        <th>链</th><th class="num">chainId</th><th>失败原因</th>
+        <th class="num">第 1 次<small>失败前耗时 ms</small></th>
+        <th>之后<small>后续请求的结果</small></th>
+        <th>错误原文</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>09 · 延迟抖动与块高回退</h2></div>
+    <p class="secsub" id="jitsub"></p>
+    <div class="tablewrap">
+      <table id="jittertable"><thead><tr>
+        <th>链</th><th class="num">chainId</th>
+        <th class="num">抖动 ms<small>耗时的标准差</small></th>
+        <th class="num">p50 ms<small>中位数</small></th>
+        <th class="num">p95 ms<small>慢的时候</small></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+    <h3 class="sm" id="hbtitle"></h3>
+    <p class="secsub" id="hbsub" style="margin-bottom:10px"></p>
+    <div class="tablewrap" style="max-height:460px;overflow-y:auto">
+      <table id="hbtable"><thead><tr>
+        <th>链</th><th class="num">chainId</th><th>层</th>
+        <th class="num">回退次数<small>/ 调用次数</small></th>
+        <th class="num">最多回退<small>块</small></th>
+        <th class="num">约合<small>秒</small></th>
+        <th>块高序列<small>按调用顺序，相对第 1 次；红色 = 比之前见过的低</small></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>10 · 全部链明细</h2></div>
+    <p class="secsub" id="allsub"></p>
+    <div class="legendrow">
+      <span><span class="badge fail">失败</span> 这项请求失败，悬停看原因</span>
+      <span><span class="na">—</span> 无法计算（依赖的数据失败了）</span>
+      <span><span class="v-warn">数字</span> 可用率 &lt; 100%</span>
+      <span><span class="dotsp">▲</span> 单点（仅 1 个活跃节点）</span>
+    </div>
+    <div class="ctrls">
+      <input id="q" type="text" placeholder="搜索链名 / chainId…" aria-label="搜索">
+      <select id="tierf" aria-label="按分层筛选">
+        <option value="">全部分层</option>
+        <option value="A-high">A 高冗余</option>
+        <option value="B-medium">B 中</option>
+        <option value="C-low">C 低/单点</option>
+      </select>
+      <select id="levelf" aria-label="按问题级别筛选">
+        <option value="">全部状态</option>
+        <option value="0">只看严重</option>
+        <option value="1">严重 + 警告</option>
+        <option value="ok">只看正常</option>
+      </select>
+      <label style="font-size:13px;color:var(--fg-2)"><input type="checkbox" id="spf"> 仅单点</label>
+      <span class="count" id="rowcount"></span>
+    </div>
+    <div class="tablewrap" style="max-height:600px;overflow-y:auto">
+      <table id="alltable" class="sortable"><thead><tr>
+        <th data-k="name">链</th>
+        <th data-k="chainId" class="num">chainId</th>
+        <th data-k="tier">层</th>
+        <th data-k="level">问题<small>点表头按严重度排 · 悬停看详情</small></th>
+        <th data-k="active" class="num">活跃节点</th>
+        <th data-k="avail" class="num">常规可用率<small>% · 最新区块类</small></th>
+        <th data-k="aavail" class="num">进阶可用率<small>% · 悬停看失败</small></th>
+        <th data-k="havail" class="num">历史可用率<small>% · 3 个深度</small></th>
+        <th data-k="p50" class="num">p50<small>ms · eth_blockNumber</small></th>
+        <th data-k="cold" class="num">冷回源<small>ms · 各区块第 1 次中位数</small></th>
+        <th data-k="warm" class="num">缓存命中<small>ms · 后几次中位</small></th>
+        <th data-k="speedup" class="num">加速<small>× · 冷 ÷ 命中</small></th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>11 · 方法与复现</h2></div>
+    <div class="card">
+      <div class="mlist" id="mlist"></div>
+      <h3 class="sm">错误类型说明</h3>
+      <div class="tablewrap">
+        <table id="kindtable"><thead><tr><th>类型</th><th>代码</th><th>含义</th></tr></thead><tbody></tbody></table>
+      </div>
+      <h3 class="sm">问题判定规则</h3>
+      <div class="tablewrap">
+        <table id="ruletable"><thead><tr><th>级别</th><th>问题</th><th>判定条件</th></tr></thead><tbody></tbody></table>
+      </div>
+      <pre>curl -s "https://rpc.cryptostack.ai/api/public/chains?limit=500" -o chains_all.json   # 链目录快照
+curl -s "https://rpc.cryptostack.ai/api/public/overview"         -o overview.json     # 路由器概览快照
+python3 classify_chains.py                                        # 分层 → chains_classified.csv
+python3 rpc_bench.py     --chains all --methods all --samples 10 --interval 0.5  # 常规 + 历史区块可用性
+python3 latency_cache.py --chains all --samples 12 --cache-blocks 10 --cache-reps 10 # 稳定延迟 + 缓存冷/热
+python3 build_report.py                                           # 合并结果 → 生成新的报告页（含和历次运行的对比）
+./run_all.sh                                                      # 或者一条命令跑完以上全部</pre>
+    </div>
+  </section>
+
+  <footer>
+    <span id="foot-target"></span>
+    <span id="foot-calls"></span>
+  </footer>
+</div>
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script id="data" type="application/json">{}</script>
+<script>
+(function(){
+  "use strict";
+  var D = JSON.parse(document.getElementById('data').textContent);
+  var M = D.meta, K = D.error_kinds;
+  var $ = function(id){ return document.getElementById(id); };
+  var esc = function(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); };
+  var num = function(v){ return v==null ? null : Number(v).toLocaleString(); };
+  var kl = function(k){ return (K[k]||K.other).label; };
+  var kd = function(k){ return (K[k]||K.other).desc; };
+  var LEVEL = [{cls:'crit', label:'严重'}, {cls:'warn', label:'警告'}, {cls:'info', label:'提示'}];
+  var LV = {crit:0, warn:1, info:2};
+
+  // ---- tooltip: any element with data-ti shows TIPS[data-ti] (hover; tap on touch) ----
+  var tip = $('tip'), TIPS = [], pinned = null;
+  function T(html){ TIPS.push(html); return ' data-ti="'+(TIPS.length-1)+'"'; }
+  function moveTip(x0, y0){
+    var x = x0 + 14, y = y0 + 16, w = tip.offsetWidth, h = tip.offsetHeight;
+    if (x + w > innerWidth - 8) x = Math.max(8, x0 - w - 14);
+    if (y + h > innerHeight - 8) y = Math.max(8, y0 - h - 16);
+    tip.style.left = x + 'px'; tip.style.top = y + 'px';
+  }
+  function showTip(el, x, y){ tip.innerHTML = TIPS[+el.dataset.ti]; tip.style.opacity = 1; moveTip(x, y); }
+  function hideTip(){ tip.style.opacity = 0; pinned = null; }
+  document.addEventListener('mouseover', function(e){
+    var el = e.target.closest && e.target.closest('[data-ti]');
+    if (el) showTip(el, e.clientX, e.clientY); else if (!pinned) tip.style.opacity = 0;
+  });
+  document.addEventListener('mousemove', function(e){ if (tip.style.opacity == 1 && !pinned) moveTip(e.clientX, e.clientY); });
+  document.addEventListener('click', function(e){
+    var el = e.target.closest && e.target.closest('[data-ti]');
+    if (el && el !== pinned){ pinned = el; showTip(el, e.clientX, e.clientY); } else hideTip();
+  });
+  addEventListener('scroll', function(){ if (pinned) hideTip(); }, {passive:true});
+
+  function errTip(kind, msg, extra){
+    return '<b>'+esc(kl(kind))+'</b><br>'+esc(kd(kind))+(extra?'<br>'+extra:'')
+      + (msg ? '<span class="tm">'+esc(msg)+'</span>' : '');
+  }
+  function pill(t){ var c = t==='A-high'?'A':t==='B-medium'?'B':'C'; return '<span class="pill '+c+'">'+c+'</span>'; }
+  function availCls(v){ return v==null ? '' : v < 50 ? 'v-crit' : v < 100 ? 'v-warn' : ''; }
+  function sx(v){ return v>=10 ? Math.round(v) : v.toFixed(1); }
+  function chip(i){ return '<span class="chip '+i.level+'"'+T('<b>'+esc(i.label)+'</b> · '+LEVEL[LV[i.level]].label+'<br>'+esc(i.detail))+'>'+esc(i.label)+'</span>'; }
+  function ratioBadge(c){
+    if (!c || !c.total) return '<span class="badge skip"'+T('<b>未测</b><br>'+esc(c && c.skipped || '链太短，取不到这个深度的区块'))+'>未测</span>';
+    var cls = c.ok===c.total ? 'ok' : c.ok===0 ? 'fail' : 'part';
+    var tipHtml = c.ok===c.total ? '<b>'+c.ok+'/'+c.total+' 全部成功</b>'
+      : errTip(c.kind, c.msg, (c.ok===0?'全部失败':'部分失败')+' · 成功 '+c.ok+'/'+c.total);
+    if (c.blocks) tipHtml += '<span class="tm">查询的区块：'+c.blocks.map(function(b){return '#'+b.toLocaleString();}).join('、')+'</span>';
+    return '<span class="badge '+cls+'"'+T(tipHtml)+'>'+c.ok+'/'+c.total+(c.ok===0?' 失败':'')+'</span>';
+  }
+
+  // ---- header ----
+  var issueN = D.issue_rows.length;
+  var critN = D.issue_rows.filter(function(r){ return r.issues[0].level==='crit'; }).length;
+  $('summary').innerHTML = '对 <b>cryptostack RPC 路由器</b>正在服务的 <b>'+M.n_chains+'</b> 条链做了一轮体检：'
+    + '常规请求（查最新区块等）可用率 <b>'+M.avail_regular+'%</b>，'
+    + (M.avail_advanced!=null ? 'eth_call / 交易回执 / 批量等进阶方法可用率 <b>'+M.avail_advanced+'%</b>，' : '')
+    + '历史区块查询可用率 <b>'+M.avail_history+'%</b>；命中缓存后的延迟 p50 约 <b>'+M.hot_p50+' ms</b>。'
+    + '共 <b>'+issueN+'</b> 条链有需要处理的问题（严重 '+critN+' · 警告 '+(issueN-critN)+'），见 02。';
+  $('metaline').innerHTML =
+    '<span>目标 <a href="https://'+esc(M.target)+'/" target="_blank" rel="noopener">'+esc(M.target)+'</a></span>'
+    + '<span>覆盖链 <b>'+M.n_chains+'</b>'+(M.catalog?' / 目录 <b class="tnum">'+num(M.catalog)+'</b>':'')+'</span>'
+    + (M.endpoints_active?'<span>活跃上游节点 <b class="tnum">'+M.endpoints_active+'</b></span>':'')
+    + '<span>采集时间 <b>'+esc(M.date)+'</b></span>';
+  $('foot-target').textContent = M.target;
+  $('foot-calls').textContent = '可用性测试 '+num(M.bench_calls)+' 次 + 延迟/缓存测试 '+num(M.latcache_calls)+' 次调用 · 采集于 '+M.date;
+
+  var CS = D.cache_summary;
+  var TR = D.trend || {runs: [], n: 1, seen: {}, prev: null};
+  var PR = TR.runs.length > 1 ? TR.runs[TR.runs.length-2] : null;
+  // change against the previous run, coloured by whether it got better
+  function dlt(cur, prev, higherBetter, unit){
+    if (!PR || cur==null || prev==null) return '';
+    var d = Math.round((cur - prev)*10)/10;
+    if (!d) return ' · 较上次持平';
+    var good = (d > 0) === higherBetter;
+    return ' · 较上次 <span class="'+(good?'up':'down')+'">'+(d>0?'+':'')+d+(unit||'')+'</span>';
+  }
+  var kpis = [
+    {lab:'常规请求可用率', val:M.avail_regular.toFixed(1), unit:'%', cls:M.avail_regular>=99.5?'good':'warn',
+     note:num(M.avail_regular_ok)+' / '+num(M.avail_regular_total)+' 次成功'+dlt(M.avail_regular, PR&&PR.avail_regular, true)},
+    M.avail_advanced==null ? null :
+    {lab:'进阶方法可用率', val:M.avail_advanced.toFixed(1), unit:'%', cls:M.avail_advanced>=99.5?'good':'warn',
+     note:num(M.avail_advanced_ok)+' / '+num(M.avail_advanced_total)+' 次成功'+dlt(M.avail_advanced, PR&&PR.avail_advanced, true)},
+    {lab:'历史区块可用率', val:M.avail_history.toFixed(1), unit:'%', cls:M.avail_history>=99.5?'good':M.avail_history>=90?'warn':'crit',
+     note:num(M.avail_history_ok)+' / '+num(M.avail_history_total)+' 次成功'+dlt(M.avail_history, PR&&PR.avail_history, true)},
+    {lab:'热路径 p50', val:M.hot_p50, unit:'ms', note:'命中缓存后，各方法中位延迟'+dlt(M.hot_p50, PR&&PR.hot_p50, false, 'ms')},
+    {lab:'缓存中位加速', val:CS.speedup_med, unit:'×', note:'冷回源 '+CS.cold_p50+'ms → 命中 '+CS.warm_p50+'ms'},
+    {lab:'有问题的链', val:issueN, unit:'条', cls:critN?'crit':issueN?'warn':'good', note:'严重 '+critN+' · 警告 '+(issueN-critN)+dlt(issueN, PR&&PR.n_issue, false)}
+  ].filter(Boolean);
+  $('kpis').innerHTML = kpis.map(function(k){
+    return '<div class="kpi '+(k.cls||'')+'"><div class="lab">'+k.lab+'</div>'
+      +'<div class="val tnum">'+k.val+'<small>'+k.unit+'</small></div>'
+      +'<div class="note">'+k.note+'</div></div>';
+  }).join('');
+
+  // ---- 00 glossary ----
+  var gloss = [
+    ['常规可用率', M.n_regular_methods+' 个常规方法（链 ID、最新块高、gas、最新区块、余额、nonce、日志等）每条链各请求 '+M.bench_samples+' 次，<b>成功的比例</b>。成功 = HTTP 200 且 JSON-RPC 返回 result、没有 error。'],
+    ['进阶可用率', '钱包和 dApp 常用、但不只是读最新区块的 '+M.n_advanced_methods+' 个方法：eth_call、估算 gas、查最近交易的回执、500 块区间的日志查询、一次发 3 个调用的批量请求。'],
+    ['历史可用率', '查<b>过去的区块</b>的成功比例，分三个深度：近期（最新块往前 16–128 块）、中期（往前 5k–20k 块，超出「只保留最近 1024 块」的公共节点）、早期（链的前 1/4 段，需要保留完整历史的节点）。'],
+    ['p50 / p95', '把多次请求的耗时从快到慢排：<b>p50</b> 是中间那个（一半请求比它快）；<b>p95</b> 是第 95% 那个，反映「慢的时候有多慢」。'],
+    ['冷回源', '缓存测试中每个随机近期区块第 1 次请求的耗时，取各区块的中位数。缓存里没有，路由器要去上游节点取，<b>反映上游速度</b>。'],
+    ['缓存命中', '同一请求紧接着再发几次，耗时的中位数。此时已命中路由器缓存，基本等于你到路由器的网络往返（不含建连握手）。'],
+    ['加速', '冷回源 ÷ 缓存命中。<b>越大说明上游越慢</b>、缓存帮的忙越大；但首次请求和不可缓存的请求享受不到。'],
+    ['抖动', 'eth_blockNumber 连续 '+M.lat_samples+' 次请求耗时的<b>标准差</b>。越大说明延迟越不稳定，时快时慢。'],
+    ['块高回退', '可用性测试中按顺序调用 eth_blockNumber，后一次返回的块高<b>比之前见过的还低</b>。说明路由器把请求分给了高度不同的上游节点，用户可能先看到新块、再看到旧块。'],
+    ['分层 A/B/C', '按活跃上游节点数：A ≥10，B 4–9，C ≤3。<span class="dotsp">▲</span> 单点 = 只有 1 个活跃节点，这个节点一挂整条链就不可用。'],
+    ['表格标记', '<span class="badge fail">失败</span> 这项请求失败了；<span class="badge part">7/10</span> 部分失败；<span class="badge ok">10/10</span> 全部成功；<span class="badge skip">未测</span> 不适用；<span class="na">—</span> 无法计算（依赖的数据失败了）。'],
+    ['问题级别', '<span class="chip crit">严重</span> 整链不可用、连近期区块都查不到、返回错链；<span class="chip warn">警告</span> 部分请求失败、进阶方法失败、历史区块缺失、块高回退、首次请求失败、上游慢；<span class="chip info">提示</span> 单点、抖动大、小幅块高回退。']
+  ];
+  $('gloss').innerHTML = gloss.map(function(g){
+    return '<div class="gi"><span class="gk">'+g[0]+'</span><span class="gv">'+g[1]+'</span></div>';
+  }).join('');
+
+  // ---- 01 tiers ----
+  var tcol = {'A-high':'var(--tierA)','B-medium':'var(--tierB)','C-low':'var(--tierC)'};
+  var tink = {'A-high':'#fff','B-medium':'#fff','C-low':'#0b2749'};
+  var total = D.tiers.reduce(function(a,t){return a+t.count;},0);
+  $('tierbar').innerHTML = D.tiers.map(function(t){
+    var pc = t.count/total*100;
+    return '<div class="tierseg" style="flex:'+t.count+' '+t.count+' 0;background:'+tcol[t.tier]+';color:'+tink[t.tier]+'"'
+      + T('<b>'+esc(t.label)+'</b><br>'+t.count+' 条链 · '+pc.toFixed(0)+'%')+'>'+(pc>7? t.count : '')+'</div>';
+  }).join('');
+  $('tierlegend').innerHTML = D.tiers.map(function(t){
+    return '<span><span class="dot" style="background:'+tcol[t.tier]+'"></span>'+esc(t.label)+' · <b class="tnum">'+t.count+'</b> 条</span>';
+  }).join('');
+  $('tiertags').innerHTML =
+    '<span class="tag">单点链（仅 1 个活跃节点） <b class="tnum">'+D.single_point+'</b></span>';
+
+  // in how many of the last TR.n runs this chain had a problem
+  function seenBadge(seen){
+    if (TR.n < 2 || seen == null) return '<span class="na">—</span>';
+    var tip = T('最近 '+TR.n+' 次运行中，有 '+seen+' 次这条链有严重或警告级问题');
+    if (seen === TR.n) return '<span class="badge fail"'+tip+'>持续 '+seen+'/'+TR.n+'</span>';
+    if (seen === 1) return '<span class="badge part"'+tip+'>新出现</span>';
+    return '<span class="badge part"'+tip+'>'+seen+'/'+TR.n+' 次</span>';
+  }
+
+  // ---- 02 issues ----
+  $('issuesub').innerHTML = '共 <b>'+issueN+'</b> 条链有<b>严重</b>或<b>警告</b>级问题（严重 '+critN+' 条），严重的排在前面。'
+    + '「详情」列是测试中实际观察到的情况和上游返回的错误原文。下面的标签是各类问题涉及的链数（含提示级）。';
+  var order = Object.keys(D.issue_meta).sort(function(a,b){
+    return LV[D.issue_meta[a].level]-LV[D.issue_meta[b].level] || D.issue_counts[b]-D.issue_counts[a]; });
+  $('issuechips').innerHTML = order.map(function(code){
+    var im = D.issue_meta[code];
+    return '<span class="chip '+im.level+'">'+esc(im.label)+' · <b class="tnum">'+D.issue_counts[code]+'</b></span>';
+  }).join('');
+  document.querySelector('#issuetable tbody').innerHTML = D.issue_rows.map(function(r){
+    var top = LEVEL[LV[r.issues[0].level]];
+    return '<tr><td>'+esc(r.name)+'</td><td class="num">'+r.chainId+'</td><td>'+pill(r.tier)+'</td>'
+      + '<td><span class="chip '+top.cls+'">'+top.label+'</span></td>'
+      + '<td>'+seenBadge(r.seen)+'</td>'
+      + '<td style="white-space:normal;min-width:120px">'+r.issues.map(chip).join('')+'</td>'
+      + '<td class="long">'+r.issues.map(function(i){
+          return '<div style="margin-bottom:5px"><b style="color:var(--fg)">'+esc(i.label)+'</b>'
+            + i.detail.split('；').map(function(line){ return '<div class="err">· '+esc(line)+'</div>'; }).join('')+'</div>';
+        }).join('')+'</td></tr>';
+  }).join('') || '<tr><td colspan="7" class="na">没有发现需要处理的问题</td></tr>';
+
+  // ---- 03 trend ----
+  (function(){
+    var P = TR.prev;
+    $('trendsub').innerHTML = TR.n < 2
+      ? '这是第一次运行，还没有可对比的历史。以后每次生成报告都会和之前的运行对比。'
+      : '最近 <b>'+TR.n+'</b> 次运行（含本次，最新的在最下面）。<b>测法不同的运行之间数字不能直接比较</b>，比如早期的延迟里含建连握手、采样次数也不同，看「测法」列。'
+        + '和上次（'+esc(P.date)+'）相比：新出现问题的链 <b>'+P.new.length+'</b> 条，问题消失的链 <b>'+P.resolved.length+'</b> 条'
+        + (P.same_method ? '。' : '（上次测法不同，对比仅供参考）。');
+    var f = function(v){ return v==null ? '<span class="na">—</span>' : v; };
+    document.querySelector('#trendtable tbody').innerHTML = TR.runs.map(function(r, i){
+      return '<tr'+(i===TR.runs.length-1?' class="cur"':'')+'><td>'+esc(r.date)+(i===TR.runs.length-1?' <span class="chip info">本次</span>':'')+'</td>'
+        + '<td style="white-space:normal;min-width:200px;font-size:12px;color:var(--fg-2)">'+esc(r.method)+'</td>'
+        + '<td class="num">'+r.n_chains+'</td><td class="num">'+f(r.avail_regular)+'</td><td class="num">'+f(r.avail_advanced)+'</td>'
+        + '<td class="num">'+f(r.avail_history)+'</td><td class="num">'+f(r.hot_p50)+'</td><td class="num">'+f(r.cold_p50)+'</td>'
+        + '<td class="num">'+f(r.warm_p50)+'</td><td class="num">'+r.n_crit+' / '+(r.n_issue-r.n_crit)+'</td>'
+        + '<td class="num">'+(r.n_head_back==null?'<span class="na">—</span>':r.n_head_back)+'</td></tr>';
+    }).join('');
+    if (!P){ $('trendchanges').hidden = true; return; }
+    function card(cls, title, desc, rows, empty){
+      return '<div class="failcard '+cls+'"><h3>'+title+' · '+rows.length+'</h3><p class="kd">'+desc+'</p><ul>'
+        + (rows.map(function(r){
+            return '<li><b>'+esc(r.name)+'</b> <span class="tnum">('+r.chainId+')</span>'
+              + (r.untested ? ' <span class="badge skip">本次未测</span>' : '')
+              + '<span class="m">'+esc(r.issues.join('、'))+'</span></li>';
+          }).join('') || '<li class="na">'+empty+'</li>') + '</ul></div>';
+    }
+    $('trendchanges').innerHTML =
+      card('bad', '新出现问题的链', '上次没有严重或警告级问题，这次有。下面是这次的问题。', P.new, '没有')
+      + card('good', '问题消失的链', '上次有严重或警告级问题，这次没有了。下面是上次的问题。', P.resolved, '没有');
+  })();
+
+  // ---- 04 availability bars ----
+  var hd = D.history.depths;
+  $('availsub').innerHTML = '每个方法在 '+M.n_chains+' 条链上各请求 '+M.bench_samples+' 次。'
+    + '<b>常规方法</b>共 '+num(M.avail_regular_total)+' 次，成功率 <b>'+M.avail_regular+'%</b>；'
+    + (M.avail_advanced!=null ? '<b>进阶方法</b>共 '+num(M.avail_advanced_total)+' 次，成功率 <b>'+M.avail_advanced+'%</b>；' : '')
+    + '<b>历史区块</b>共 '+num(M.avail_history_total)+' 次，成功率 <b>'+M.avail_history+'%</b>。'
+    + '条长 = 成功率（0–100%），最右侧红字是失败次数。';
+  (function(){
+    var col = {simple:'var(--s-blue)', complex:'var(--s-orange)', advanced:'var(--s-aqua)', history:'var(--s-violet)'};
+    var gname = {simple:'简单方法', complex:'复杂方法', advanced:'进阶方法', history:'历史区块'};
+    $('availbars').innerHTML = D.methods_avail.map(function(a){
+      var nm = a.label.indexOf(' (')>0 ? esc(a.label.split(' (')[0])+'<small>'+esc(a.label.split(' (')[1].replace(')',''))+'</small>' : esc(a.label);
+      var lab = a.sr==null ? '未测' : a.sr.toFixed(1)+'%';
+      var fails = a.total - a.ok;
+      return '<div class="barrow f3"><div class="name">'+nm+'</div>'
+        + '<div class="track"'+T('<b>'+esc(a.label)+'</b> · '+gname[a.group]+'<br>成功 '+a.ok+' / '+a.total+' 次（'+lab+'）'+(fails?'<br>失败 '+fails+' 次，原因见 '+(a.group==='history'?'06':'05'):''))+'>'
+        + '<div class="fill" style="width:'+(a.sr||0)+'%;background:'+col[a.group]+'"><span class="vlab">'+lab
+        + '</span></div></div><div class="fc">'+(fails?'失败 '+fails:'')+'</div></div>';
+    }).join('');
+  })();
+
+  // ---- 04 regular failures ----
+  (function(){
+    var fs = D.failures, groups = {};
+    fs.forEach(function(f){ (groups[f.kind] = groups[f.kind] || []).push(f); });
+    var chainsN = {}; fs.forEach(function(f){ chainsN[f.chainId] = 1; });
+    $('failsub').innerHTML = '常规方法和进阶方法共 <b>'+fs.length+'</b> 处失败，涉及 <b>'+Object.keys(chainsN).length+'</b> 条链，按原因分组。'
+      + '每组标题下是这类错误的含义；每条列出 链 · 方法 · 成功次数/总次数 · 错误原文。历史区块的失败见 06。';
+    var kinds = Object.keys(K).filter(function(k){ return groups[k]; });
+    $('failgrid').innerHTML = kinds.map(function(k){
+      return '<div class="failcard '+k+'"><h3>'+esc(kl(k))+' · '+groups[k].length+'</h3><p class="kd">'+esc(kd(k))+'</p><ul>'
+        + groups[k].map(function(f){
+            return '<li><b>'+esc(f.name)+'</b> <span class="tnum">('+f.chainId+')</span> — '+esc(f.method)
+              + ' <span class="badge '+(f.ok?'part':'fail')+'">'+f.ok+'/'+f.total+'</span>'
+              + '<span class="m">'+esc(f.msg)+'</span></li>';
+          }).join('') + '</ul></div>';
+    }).join('') || '<div class="card na">常规方法和进阶方法都没有失败</div>';
+  })();
+
+  // ---- 05 history ----
+  (function(){
+    var hs = 0; D.history.rows.forEach(function(r){ Object.keys(r.cells).forEach(function(k){ hs = Math.max(hs, r.cells[k].total); }); });
+    $('hsamples').textContent = M.bench_samples;
+    $('dtiles').innerHTML = hd.map(function(d){
+      var cls = d.sr>=99.5?'good-ink':d.sr>=90?'warn-ink':'crit-ink';
+      return '<div class="dtile"><div class="dl">'+esc(d.label)+'</div><div class="dw">'+esc(d.window)+'</div>'
+        + '<div class="dv tnum" style="color:var(--'+cls+')">'+(d.sr==null?'—':d.sr.toFixed(1))+'<small>%</small></div>'
+        + '<div class="dn">成功 '+num(d.ok)+' / '+num(d.total)+' 次</div>'
+        + '<div class="dd"><span class="v-crit">'+d.chains_none+'</span> 条链全部失败 · <span class="v-warn">'+d.chains_some+'</span> 条链部分失败'
+        + (d.chains_skipped?' · '+d.chains_skipped+' 条未测':'')+'</div></div>';
+    }).join('');
+    hd.forEach(function(d){ $('h-'+d.id).innerHTML = esc(d.label)+'<small>'+esc(d.window)+'</small>'; });
+    $('htitle').textContent = '有历史区块失败的链 · '+D.history.rows.length+' 条（全部失败的排在前面）';
+    document.querySelector('#histtable tbody').innerHTML = D.history.rows.map(function(r){
+      var kinds = {}, msg = {};
+      hd.forEach(function(d){ var c = r.cells[d.id]; if (c && c.kind){ kinds[c.kind] = (kinds[c.kind]||0) + (c.total-c.ok); msg[c.kind] = c.msg; } });
+      var main = Object.keys(kinds).sort(function(a,b){ return kinds[b]-kinds[a]; })[0];
+      return '<tr><td>'+esc(r.name)+'</td><td class="num">'+r.chainId+'</td><td>'+pill(r.tier)+'</td>'
+        + hd.map(function(d){ return '<td>'+ratioBadge(r.cells[d.id])+'</td>'; }).join('')
+        + '<td><span'+T(errTip(main, msg[main]))+' style="border-bottom:1px dashed var(--muted)">'+esc(kl(main))+'</span></td></tr>';
+    }).join('') || '<tr><td colspan="7" class="na">所有链的历史区块都查询成功</td></tr>';
+  })();
+
+  // ---- 06 latency bars ----
+  $('latsub').innerHTML = '延迟测试中每条链每个方法<b>连续请求 '+M.lat_samples+' 次</b>（同一条链内串行，不自己抢资源），'
+    + '先算出每条链的 p50 / p95，再取所有链的中位数。这些请求大多命中缓存，所以反映的是<b>路由器本身</b>的速度。';
+  (function(){
+    var max = 0; D.methods_latency.forEach(function(l){ max = Math.max(max, l.p95||0); });
+    max = Math.ceil(max/10)*10 + 10;
+    $('latbars').innerHTML = D.methods_latency.map(function(l){
+      var w50 = l.p50/max*100, w95 = l.p95/max*100;
+      return '<div class="barrow"><div class="name">'+esc(l.name)+'</div>'
+        + '<div class="track"'+T('<b>'+esc(l.name)+'</b><br>p50 '+l.p50+' ms · p95 '+l.p95+' ms<br>'+l.n+' 条链的中位数')+'>'
+        + '<div style="position:absolute;left:'+w50+'%;width:'+(w95-w50)+'%;height:100%;background:var(--grid)"></div>'
+        + '<div class="fill" style="width:'+w50+'%;background:var(--s-blue)"><span class="vlab">'+l.p50+'ms</span></div>'
+        + '<span class="vlab out" style="left:'+w95+'%">p95 '+l.p95+'</span>'
+        + '</div></div>';
+    }).join('');
+  })();
+
+  // ---- 07 cache ----
+  $('creps').textContent = CS.reps;
+    $('cblocks').textContent = CS.blocks;
+  $('cachesub').innerHTML = '中位数：冷回源 <b>'+CS.cold_p50+' ms</b> → 缓存命中 <b>'+CS.warm_p50+' ms</b>，中位加速 <b>'+CS.speedup_med+'×</b>；'
+    + '<b>'+CS.benefit+'/'+CS.n+'</b> 条链加速 ≥ '+CS.benefit_x+'×。'
+    + '<b>'+CS.n_cold_fail+'</b> 条链有区块的冷请求失败，失败的区块不计入冷回源中位数（见本节下方）。下图是加速最多的 '+D.cache_top.length+' 条链。';
+  (function(){
+    var max = 0; D.cache_top.forEach(function(c){ max = Math.max(max, c.cold); });
+    $('cachebars').innerHTML = D.cache_top.map(function(c){
+      var w = Math.max(c.cold/max*100, 1), inside = w > 45;
+      var ann = '<span class="cold">'+num(c.cold)+'ms</span><span class="warm">→ 命中 '+c.warm+'ms</span>'
+        + '<span class="sx">'+sx(c.speedup)+'×</span>';
+      return '<div class="crow"><div class="cn" title="'+esc(c.name)+'">'+esc(c.name)+' <small>'+c.chainId+'</small></div>'
+        + '<div class="cbarwrap"'+T('<b>'+esc(c.name)+'</b> ('+c.chainId+')<br>冷回源 '+num(c.cold)+' ms → 缓存命中 '+c.warm+' ms<br>加速 <b>'+c.speedup+'×</b>')+'>'
+        + '<div class="cbar" style="width:'+w+'%"></div>'
+        + '<div class="cann'+(inside?'':' dark')+'" style="'+(inside?'left:0':'left:'+w+'%')+'">'+ann+'</div>'
+        + '</div></div>';
+    }).join('');
+    $('cftitle').textContent = '冷请求失败的链 · '+D.cache_fail.length+' 条';
+    document.querySelector('#cftable tbody').innerHTML = D.cache_fail.map(function(f){
+      var after = f.retry_call
+        ? '<span class="badge part">第 '+f.retry_call+' 次才成功</span> <span class="tnum" style="font-family:var(--mono);font-size:11.5px">'+num(f.retry_ms)+' ms</span>'
+        : '<span class="badge fail">'+f.reps+' 次全部失败</span>';
+      return '<tr><td>'+esc(f.name)+'</td><td class="num">'+f.chainId+'</td>'
+        + '<td><span'+T(errTip(f.kind, null, '查询区块 #'+num(f.block)))+' style="border-bottom:1px dashed var(--muted)">'+esc(kl(f.kind))+'</span>'+(f.n_blocks>1?' <span class="badge part">'+f.n_fail+'/'+f.n_blocks+' 个区块</span>':'')+'</td>'
+        + '<td class="num">'+num(f.fail_ms)+'</td><td>'+after+'</td>'
+        + '<td class="long"><span class="err">'+esc(f.msg)+'</span></td></tr>';
+    }).join('') || '<tr><td colspan="6" class="na">没有冷请求失败的链</td></tr>';
+  })();
+
+  // ---- 08 jitter ----
+  $('jitsub').innerHTML = '抖动 = <code>eth_blockNumber</code> 连续 '+M.lat_samples+' 次请求耗时的<b>标准差</b>。p50 正常但抖动大，说明大部分请求很快、偶尔有几次很慢，'
+    + '通常是上游池里有不稳定的节点，这些链适合加节点或换上游。下表是抖动最大的 '+D.jitter_top.length+' 条链（≥ '+M.thresholds.jitter_ms+' ms 会标为「延迟抖动大」）。';
+  document.querySelector('#jittertable tbody').innerHTML = D.jitter_top.map(function(j){
+    return '<tr><td>'+esc(j.name)+'</td><td class="num">'+j.chainId+'</td>'
+      + '<td class="num '+(j.jitter>=M.thresholds.jitter_ms?'v-warn':'')+'">'+j.jitter+'</td>'
+      + '<td class="num">'+j.p50+'</td><td class="num">'+j.p95+'</td></tr>';
+  }).join('');
+
+  // head went backwards
+  (function(){
+    var rows = D.head_back || [];
+    $('hbtitle').textContent = '块高回退的链 · '+rows.length+' 条';
+    $('hbsub').innerHTML = '可用性测试中每条链按顺序调用 eth_blockNumber '+M.bench_samples+' 次（分散在约 1 分钟内）。后一次返回的块高比之前见过的还低，'
+      + '说明路由器把请求分给了高度不同的上游节点，有的节点落后。回退 ≥ '+M.thresholds.head_back+' 块标为警告，更少的标为提示。'
+      + '「约合秒」按测试期间块高的增长速度估算。';
+    document.querySelector('#hbtable tbody').innerHTML = rows.map(function(r){
+      var best = -Infinity, base = r.heads[0];
+      var seq = r.heads.map(function(b){
+        var lo = b < best; best = Math.max(best, b);
+        var d = b - base;
+        return '<span'+(lo?' class="lo"':'')+'>'+(d>=0?'+':'')+d+'</span>';
+      }).join(' ');
+      return '<tr><td>'+esc(r.name)+'</td><td class="num">'+r.chainId+'</td><td>'+pill(r.tier)+'</td>'
+        + '<td class="num">'+r.n_back+' / '+r.n+'</td>'
+        + '<td class="num '+(r.max_back>=M.thresholds.head_back?'v-warn':'')+'">'+num(r.max_back)+'</td>'
+        + '<td class="num">'+(r.sec_back!=null?r.sec_back:'<span class="na">—</span>')+'</td>'
+        + '<td class="seq"'+T('第 1 次返回的块高：#'+num(base))+'>'+seq+'</td></tr>';
+    }).join('') || '<tr><td colspan="7" class="na">没有发现块高回退</td></tr>';
+  })();
+
+  // ---- 10 all chains ----
+  (function(){
+    var rows = D.all_chains.slice();
+    var tbody = document.querySelector('#alltable tbody');
+    var sortK = 'level', sortAsc = true;
+    var q = $('q'), tierf = $('tierf'), levelf = $('levelf'), spf = $('spf'), rc = $('rowcount');
+    $('allsub').innerHTML = M.n_chains+' 条链全量。点表头排序（默认按问题严重度），可按名称 / chainId 搜索、按分层或问题级别筛选。'
+      + '<b>加速 = 冷回源 ÷ 缓存命中</b>，三列来自同一组请求，可以直接相除核对。';
+    var NA = '<span class="na">—</span>';
+
+    function sval(r, k){ return k==='level' ? (r.level==null ? 9 : r.level) : r[k]; }
+    function cells(r){
+      var coldCell, warmCell, spCell;
+      if (r.cold != null){
+        coldCell = num(r.cold);
+      } else if (r.coldf){
+        var f = r.coldf;
+        coldCell = '<span class="badge fail"'+T(errTip(f.kind, f.msg, '第 1 次请求失败'+(f.ms!=null?'（耗时 '+num(f.ms)+' ms）':'')
+          + (f.retry_call ? '<br>第 '+f.retry_call+' 次才成功（'+num(f.retry_ms)+' ms）' : '<br>后续请求也全部失败')))+'>失败</span>';
+      } else coldCell = NA;
+      warmCell = r.warm != null ? num(r.warm)
+        : '<span class="na"'+T('缓存测试中没有成功的后续请求，无法得到缓存命中耗时')+'>—</span>';
+      spCell = r.speedup != null ? '<span style="color:var(--s-aqua);font-weight:700">'+sx(r.speedup)+'×</span>'
+        : '<span class="na"'+T('冷回源'+(r.cold==null?'失败':'')+(r.warm==null?(r.cold==null?'、':'')+'缓存命中缺失':'')+'，无法计算加速')+'>—</span>';
+      var hv = r.havail;
+      var hCell = hv==null ? '<span class="badge skip">未测</span>'
+        : '<span class="'+availCls(hv)+'"'+(r.hfail.length ? T('<b>历史区块失败</b>'+r.hfail.map(function(h){
+            return '<br>'+esc(h.label)+'：'+h.ok+'/'+h.total+'（'+esc(kl(h.kind))+'）<span class="tm">'+esc(h.msg)+'</span>'; }).join('')) : '')
+          + (r.hfail.length?' style="border-bottom:1px dashed currentColor"':'')+'>'+hv.toFixed(1)+'</span>';
+      var av = r.aavail;
+      var aCell = av==null ? '<span class="badge skip">未测</span>'
+        : '<span class="'+availCls(av)+'"'+(r.afail.length ? T('<b>进阶方法</b>'+r.afail.map(function(h){
+            return '<br>'+esc(h.label)+'：'+(h.skipped ? '未测（'+esc(h.skipped)+'）'
+              : h.ok+'/'+h.total+'（'+esc(kl(h.kind))+'）<span class="tm">'+esc(h.msg)+'</span>'); }).join('')) : '')
+          + (r.afail.length?' style="border-bottom:1px dashed currentColor"':'')+'>'+av.toFixed(1)+'</span>';
+      var iss = r.issues.length ? r.issues.map(chip).join('') : '<span class="chip okc">正常</span>';
+      return '<tr><td>'+esc(r.name)+'</td>'
+        + '<td class="num">'+r.chainId+'</td>'
+        + '<td>'+pill(r.tier)+'</td>'
+        + '<td style="white-space:normal;min-width:170px;max-width:260px">'+iss+'</td>'
+        + '<td class="num">'+r.active+(r.sp?' <span class="dotsp" title="单点">▲</span>':'')+'</td>'
+        + '<td class="num"><span class="'+availCls(r.avail)+'">'+(r.avail!=null?r.avail.toFixed(1):'—')+'</span></td>'
+        + '<td class="num">'+aCell+'</td>'
+        + '<td class="num">'+hCell+'</td>'
+        + '<td class="num">'+(r.p50!=null?r.p50:NA)+'</td>'
+        + '<td class="num">'+coldCell+'</td>'
+        + '<td class="num">'+warmCell+'</td>'
+        + '<td class="num">'+spCell+'</td></tr>';
+    }
+    function render(){
+      var term = q.value.trim().toLowerCase(), tf = tierf.value, lf = levelf.value, sp = spf.checked;
+      var list = rows.filter(function(r){
+        if (tf && r.tier!==tf) return false;
+        if (sp && !r.sp) return false;
+        if (lf==='ok' && r.level!=null && r.level<=1) return false;
+        if (lf!=='' && lf!=='ok' && (r.level==null || r.level>+lf)) return false;
+        if (term){ return (r.name.toLowerCase().indexOf(term)>=0) || (''+r.chainId).indexOf(term)>=0; }
+        return true;
+      });
+      list.sort(function(a,b){
+        var x = sval(a, sortK), y = sval(b, sortK);
+        if (x==null) return 1;            // missing values always last
+        if (y==null) return -1;
+        var d = typeof x==='string' ? x.localeCompare(y) : x-y;
+        return (sortAsc ? d : -d) || a.chainId-b.chainId;
+      });
+      tbody.innerHTML = list.map(cells).join('') || '<tr><td colspan="12" class="na">没有符合条件的链</td></tr>';
+      rc.textContent = list.length + ' / ' + rows.length + ' 条';
+      Array.prototype.forEach.call(document.querySelectorAll('#alltable thead th'), function(th){
+        th.classList.toggle('sorted', th.dataset.k===sortK);
+        th.classList.toggle('asc', th.dataset.k===sortK && sortAsc);
+      });
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('#alltable thead th'), function(th){
+      th.addEventListener('click', function(){
+        var k = th.dataset.k;
+        if (k===sortK){ sortAsc = !sortAsc; } else { sortK = k; sortAsc = (k==='name' || k==='level' || k==='chainId'); }
+        render();
+      });
+    });
+    q.addEventListener('input', render);
+    tierf.addEventListener('change', render);
+    levelf.addEventListener('change', render);
+    spf.addEventListener('change', render);
+    render();
+  })();
+
+  // ---- 10 methodology ----
+  $('mlist').innerHTML = [
+    ['采样入口', '所有请求经路由器 <code>POST /rpc/{chainId}</code> 转发；链目录取自 <code>/api/public/chains?limit=500</code>，概览取自 <code>/api/public/overview</code>。'],
+    ['简单方法', 'eth_chainId · eth_blockNumber · net_version · eth_gasPrice · web3_clientVersion'],
+    ['复杂方法', 'eth_getBlockByNumber(latest,true) · eth_getBalance · eth_getTransactionCount · eth_getLogs(latest)'],
+    ['进阶方法', 'eth_call（调用 0x04 预编译合约，校验返回值原样回显）· eth_estimateGas（零地址转 0 给 0x…dEaD）· eth_getTransactionReceipt（测试前从最近的区块里取交易，都是空块时改用最近 500 块日志里的交易；返回 null 也算失败）· eth_getLogs（500 块区间，过滤一个不会产生日志的地址；区间终点跟着最新块高走，保证在只保留最近 1024 块的节点范围内，每次再错开 1 块避免命中缓存）· 批量请求（一次 POST 发 eth_chainId、eth_blockNumber、eth_gasPrice，3 个都要有结果）'],
+    ['历史区块', hd.map(function(d){ return esc(d.label)+'（'+esc(d.window)+'）'; }).join(' · ')
+      + '。都用 <code>eth_getBlockByNumber(区块号,false)</code>，以测试开始时实时查到的最新块高为基准，每次随机换区块。'],
+    ['成功判定', 'HTTP 200 且 JSON-RPC 含 result、无 error；eth_chainId 还要校验返回值等于请求的 chainId；历史区块和缓存测试中<b>返回 null 也算失败</b>（上游没有该区块）。'],
+    ['限速', '同一条链的请求按轮穿插发送（每轮每个方法各 1 次），两次请求之间至少间隔 <b>'+M.bench_interval+' 秒</b>，避免测试本身的突发请求触发上游限流、被误判为「上游节点耗尽」。不同链并行测试。'],
+    ['块高回退', '可用性测试中按调用顺序记录 eth_blockNumber 的返回值，统计比之前见过的最大值还低的次数和幅度。'],
+    ['延迟测试', '5 个方法每条链各连续请求 '+M.lat_samples+' 次（链内串行、链间并行），算 p50 / p95 / 标准差。所有请求复用 keep-alive 连接，<b>耗时不含 TCP/TLS 握手</b>。'],
+    ['缓存冷/热', '每条链随机取 '+CS.blocks+' 个近期区块（实时块高往前 200–800 块），每个区块同一请求连发 '+CS.reps+' 次：第 1 次为冷回源，取各区块的中位数；之后成功的请求取中位数为缓存命中。若某区块第 1 次失败，则跳过它第一个成功的（它才是真正的回源）。各区块的冷回源请求之间至少间隔 '+M.bench_interval+' 秒。'],
+    ['错误分类', '按上游返回的错误原文归类（见下表）。同一个（链, 方法）出现多种错误时，取出现次数最多的那种，并附一条原文。']
+  ].map(function(x){ return '<div class="mi"><span class="k">'+x[0]+'</span><span class="v">'+x[1]+'</span></div>'; }).join('');
+  document.querySelector('#kindtable tbody').innerHTML = Object.keys(K).map(function(k){
+    return '<tr><td><b>'+esc(K[k].label)+'</b></td><td><code>'+k+'</code></td><td class="long">'+esc(K[k].desc)+'</td></tr>';
+  }).join('');
+  var rules = [
+    ['crit', '整链不可用 / 测试期间曾整链不可用', '某个测试阶段（可用性 / 延迟 / 缓存）这条链的请求全部失败；三个阶段都失败为「整链不可用」'],
+    ['crit', '返回了错误的链', 'eth_chainId 返回值 ≠ 请求的 chainId'],
+    ['crit', '历史区块查不到（近期）', '连最近 16–128 块都查不到'],
+    ['warn', '历史区块查不到', '中期或早期区块全部失败（0/'+M.bench_samples+'）'],
+    ['warn', '历史区块偶发失败', '某个深度部分失败（如 7/'+M.bench_samples+'）'],
+    ['warn', '常规请求失败', M.n_regular_methods+' 个常规方法中有任意一次失败'],
+    ['warn', '进阶方法失败', M.n_advanced_methods+' 个进阶方法中有任意一次失败'],
+    ['warn', '块高回退', 'eth_blockNumber 比之前返回的块高低 ≥ '+M.thresholds.head_back+' 块（更少为提示）'],
+    ['warn', '首次请求失败', '缓存测试某个区块第 1 次失败、后面某次成功：路由器遇到这个错误没有自动换上游'],
+    ['warn', '缓存区块全部失败', '某个缓存测试区块连续 '+CS.reps+' 次都失败'],
+    ['warn', '上游慢', '冷回源 ≥ '+num(M.thresholds.slow_cold_ms)+' ms'],
+    ['info', '延迟抖动大', 'eth_blockNumber 耗时标准差 ≥ '+M.thresholds.jitter_ms+' ms'],
+    ['info', '块高回退（小幅）', 'eth_blockNumber 回退 1–'+(M.thresholds.head_back-1)+' 块'],
+    ['info', '单点', '只有 1 个活跃上游节点']
+  ];
+  document.querySelector('#ruletable tbody').innerHTML = rules.map(function(r){
+    return '<tr><td><span class="chip '+r[0]+'">'+LEVEL[LV[r[0]]].label+'</span></td><td><b>'+r[1]+'</b></td><td class="long">'+r[2]+'</td></tr>';
+  }).join('');
+})();
+</script>
+</body>
+</html>

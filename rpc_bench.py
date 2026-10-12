@@ -5,10 +5,15 @@ For each selected chain it runs each selected JSON-RPC method `--samples` times
 through BASE/rpc/{chainId}, records latency and success/failure (with the error
 text and its classified cause), then aggregates per (chain, method) and per chain.
 
-Method groups: simple (metadata), complex (latest block / state / logs) and
-history (eth_getBlockByNumber at three depths below the live head: recent,
-mid = beyond a 1024-block window, early = first quarter of the chain). Each
-history sample uses a different random block so it always reaches an upstream.
+Method groups: simple (metadata), complex (latest block / state / logs),
+advanced (eth_call, eth_estimateGas, a recent tx receipt, a 500-block log
+range, a batch request) and history (eth_getBlockByNumber at three depths below
+the live head: recent, mid = beyond a 1024-block window, early = first quarter
+of the chain). Each history sample uses a different random block so it always
+reaches an upstream.
+
+Every eth_blockNumber answer is kept in call order; an answer lower than an
+earlier one means the router mixes upstreams at different heights ("head_track").
 
 Examples
 --------
@@ -35,15 +40,16 @@ from collections import Counter
 from datetime import datetime, timezone
 
 from rpcutil import (
-    SIMPLE_METHODS, COMPLEX_METHODS, HISTORY_METHODS, ALL_METHODS, METHOD_GROUP,
-    rpc_call, pct, load_chains, history_params, live_head, classify_error, ERROR_KINDS, conn_stats, Pacer,
+    SIMPLE_METHODS, COMPLEX_METHODS, ADVANCED_METHODS, HISTORY_METHODS, ALL_METHODS, METHOD_GROUP,
+    rpc_call, pct, load_chains, history_params, advanced_params, recent_txs, head_regressions, live_head,
+    classify_error, ERROR_KINDS, conn_stats, Pacer, TX_SCAN_OFFSETS,
 )
 
 MAJORS = {1, 56, 137, 8453, 42161, 10, 43114, 250, 100, 324, 59144, 534352, 5000, 81457}
 
 
 def select_methods(name):
-    return {"simple": SIMPLE_METHODS, "complex": COMPLEX_METHODS,
+    return {"simple": SIMPLE_METHODS, "complex": COMPLEX_METHODS, "advanced": ADVANCED_METHODS,
             "history": HISTORY_METHODS, "all": ALL_METHODS}[name]
 
 
@@ -73,12 +79,18 @@ def bench_chain(chain, methods, samples, timeout, seed, interval):
     head = head_src = None
     rng = random.Random(seed + cid)
     pace = Pacer(interval)
-    if any(METHOD_GROUP[m["id"]] == "history" for m in methods):
+    ctx = {}
+    if any(METHOD_GROUP[m["id"]] == "history" or m.get("needs") for m in methods):
         pace.wait()
         head, head_src = live_head(chain, timeout)
+        ctx["head"] = head
+    if any(m.get("needs") == "txs" for m in methods):
+        ctx["txs"] = recent_txs(cid, head or 0, samples, timeout, pace)
     acc = {spec["id"]: {"lats": [], "errors": [], "blocks": [], "ok": 0, "total": 0,
                         "correct": None,   # eth_chainId correctness, if applicable
                         "skipped": None} for spec in methods}
+    heads = []   # eth_blockNumber answers in call order: (seconds since start, block)
+    t_start = time.perf_counter()
     for i in range(samples):
         for spec in methods:
             a = acc[spec["id"]]
@@ -92,9 +104,23 @@ def bench_chain(chain, methods, samples, timeout, seed, interval):
                     continue
                 call = dict(spec, params=params)
                 a["blocks"].append(int(params[0], 16))
+            elif spec.get("needs"):
+                params = advanced_params(spec, ctx, i)
+                if params is None:
+                    a["skipped"] = ("no transaction in the last %d blocks" % TX_SCAN_OFFSETS[-1]
+                                    if spec["needs"] == "txs" else "chain too short (head=%s)" % head)
+                    continue
+                call = dict(spec, params=params)
             pace.wait()
             r = rpc_call(cid, call, timeout=timeout, req_id=i + 1)
             a["total"] += 1
+            if r["ok"] and spec["id"] == "eth_blockNumber":
+                try:
+                    heads.append((round(time.perf_counter() - t_start, 2), int(r["result"], 16)))
+                    # keep the log-range window near the live head on fast chains
+                    ctx["head"] = max(ctx.get("head") or 0, heads[-1][1])
+                except (ValueError, TypeError):
+                    pass
             if r["ok"] and spec["id"] == "eth_chainId":
                 try:
                     a["correct"] = (int(r["result"], 16) == cid)
@@ -133,7 +159,11 @@ def bench_chain(chain, methods, samples, timeout, seed, interval):
             "blocks": a["blocks"] or None,
             "skipped": a["skipped"],
         }
-    return cid, {"head": head, "head_source": head_src, "methods": per_method}
+    n_back, max_back = head_regressions([b for _, b in heads])
+    return cid, {"head": head, "head_source": head_src, "methods": per_method,
+                 "tx_found": len(ctx["txs"]) if "txs" in ctx else None,
+                 # head went backwards between eth_blockNumber calls = upstreams at different heights
+                 "head_track": {"heads": heads, "n_back": n_back, "max_back": max_back}}
 
 
 def fmt_ms(x):
@@ -144,8 +174,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--chains", default="traffic",
                     help="'all' | 'traffic' | 'majors' | comma-list of chainIds (default: traffic)")
-    ap.add_argument("--methods", default="all", choices=["simple", "complex", "history", "all"],
-                    help="simple | complex | history (3 historical-block depths) | all (default)")
+    ap.add_argument("--methods", default="all", choices=["simple", "complex", "advanced", "history", "all"],
+                    help="simple | complex | advanced (eth_call, estimateGas, receipts, log range, batch) "
+                         "| history (3 historical-block depths) | all (default)")
     ap.add_argument("--samples", type=int, default=10, help="requests per (chain,method) (default 10)")
     ap.add_argument("--concurrency", type=int, default=32, help="chains tested in parallel (default 32)")
     ap.add_argument("--interval", type=float, default=0.5,
@@ -288,6 +319,14 @@ def print_report(results, methods, name_by_id, tier_by_id):
     print("  %-10s %9s %4s  %s" % ("chainId", "avg_ms", "act", "name"))
     for cid, _, avg in good:
         print("  %-10s %s %4d  %s" % (cid, fmt_ms(avg), tier_by_id.get(cid, 0), name_by_id.get(cid, "")[:30]))
+
+    # head went backwards between eth_blockNumber calls
+    back = sorted([(cid, r["head_track"]) for cid, r in results.items() if r["head_track"]["n_back"]],
+                  key=lambda x: -x[1]["max_back"])
+    print("\n=== head went backwards (eth_blockNumber lower than an earlier answer): %d chains ===" % len(back))
+    for cid, h in back:
+        print("  %-10s %2d/%-2d calls  max %5d blocks back  %s" % (
+            cid, h["n_back"], len(h["heads"]), h["max_back"], name_by_id.get(cid, "")[:30]))
 
 
 if __name__ == "__main__":

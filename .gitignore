@@ -10,3 +10,6 @@ report_stats.json
 # python
 __pycache__/
 *.pyc
+
+# scheduled-run log (run_all.sh via cron)
+runs/*.log
