@@ -10,11 +10,13 @@ Two things the first-pass bench did not do:
 
 2. CACHE BENEFIT
    The router has a response cache but exposes no per-call hit header, so we
-   measure it by latency: for each (chain) we pick a RANDOM recent block
-   (200-800 below the live head: very unlikely to be warm, but still inside
-   the window pruned upstreams serve) and call eth_getBlockByNumber(block,false)
-   K+1 times back-to-back. Call #1 = cold (cache miss / upstream), calls #2..K =
-   warm (should be served from cache). We report cold vs warm and the speedup.
+   measure it by latency: for each chain we pick --cache-blocks RANDOM recent
+   blocks (200-800 below the live head: very unlikely to be warm, but still
+   inside the window pruned upstreams serve) and call eth_getBlockByNumber(block,
+   false) K+1 times back-to-back per block. Call #1 = cold (cache miss /
+   upstream), calls #2..K+1 = warm (should be served from cache). Cold = median
+   of the blocks' first calls, warm = median of all later calls; we report cold
+   vs warm and the speedup. The cold calls are paced by --interval.
    For contrast we do the same with the moving "latest" tag.
    Every call's error text and classified cause are kept; a null block counts
    as a failure. When call #1 fails we record why, how long it took, and which
@@ -36,7 +38,7 @@ import sys
 import time
 from datetime import datetime, timezone
 
-from rpcutil import rpc_call, pct, load_chains, live_head, classify_error, ERROR_KINDS
+from rpcutil import rpc_call, pct, load_chains, live_head, classify_error, ERROR_KINDS, conn_stats, Pacer
 
 MAJORS = {1, 56, 137, 8453, 42161, 10, 43114, 250, 100, 324, 59144, 534352, 5000, 81457}
 
@@ -97,21 +99,23 @@ def stable_latency(chain, samples, rounds, gap, timeout):
     return cid, out
 
 
-def cache_probe(chain, reps, timeout, rng):
-    """cold vs warm latency for a fixed (cacheable) request and for 'latest'."""
+def cache_probe(chain, blocks, reps, timeout, interval, rng):
+    """cold vs warm latency on `blocks` fixed (cacheable) blocks, and for 'latest'."""
     cid = chain["chainId"]
     head, head_src = live_head(chain, timeout)
-    # a fixed, immutable block, randomized so it is very likely cold. Kept recent
+    # fixed, immutable blocks, randomized so they are very likely cold. Kept recent
     # (head-200..800): pruned upstreams only serve the last ~1024 blocks, so an
     # old block would measure archive availability (rpc_bench --methods history)
     # instead of the cache.
-    blk = head - rng.randint(200, 800) if head > 1000 else max(1, head // 2)
-    fixed_spec = {"id": "fixed_block", "method": "eth_getBlockByNumber",
-                  "params": [hex(blk), False], "nonnull": True}
+    picks = sorted(rng.sample(range(head - 800, head - 199), blocks), reverse=True) \
+        if head > 1000 else [max(1, head // 2)]
     latest_spec = {"id": "latest_block", "method": "eth_getBlockByNumber",
                    "params": ["latest", False], "nonnull": True}
+    pace = Pacer(interval)
 
     def run(spec):
+        # only the first (cold) call reaches an upstream: pace it, keep the warm ones back-to-back
+        pace.wait()
         calls = []
         for i in range(reps + 1):      # 1 cold + reps warm
             r = rpc_call(cid, spec, timeout=timeout, req_id=i + 1)
@@ -135,14 +139,42 @@ def cache_probe(chain, reps, timeout, rng):
             # when call #1 failed: which call first succeeded (1-based) and its latency
             "retry_ok_call": None if cold is not None or first_ok is None else first_ok + 1,
             "retry_ok_latency": None if cold is not None or first_ok is None else lats[first_ok],
+            "warm": warm,
             "warm_med": statistics.median(warm) if warm else None,
             "warm_min": min(warm) if warm else None,
-            "ok": len(oks), "reps": reps + 1,
+            "ok": len(oks), "total": reps + 1, "reps": reps + 1,
             "calls": calls,
         }
 
-    return cid, {"fixed": run(fixed_spec), "latest": run(latest_spec), "block": blk,
+    probes = [dict(run({"id": "fixed_block", "method": "eth_getBlockByNumber",
+                        "params": [hex(b), False], "nonnull": True}), block=b) for b in picks]
+    fixed = merge_probes(probes)
+    return cid, {"fixed": fixed, "latest": run(latest_spec),
+                 "block": fixed["cold_fail_block"] or picks[0], "blocks": picks,
                  "head": head, "head_source": head_src}
+
+
+def merge_probes(probes):
+    """Summary over the per-block probes: cold = median of the blocks' first calls,
+    warm = median of all their later calls. The cold_* failure fields describe the
+    first block whose cold call failed (None if every cold call succeeded)."""
+    colds = [p["cold"] for p in probes if p["cold"] is not None]
+    warm = [x for p in probes for x in p["warm"]]
+    failed = next((p for p in probes if p["cold"] is None), {})
+    return {
+        "cold": statistics.median(colds) if colds else None,
+        "cold_all": [p["cold"] for p in probes],
+        "n_blocks": len(probes), "cold_ok": len(colds),
+        "warm_med": statistics.median(warm) if warm else None,
+        "warm_min": min(warm) if warm else None,
+        "ok": sum(p["ok"] for p in probes), "total": sum(p["total"] for p in probes),
+        "reps": probes[0]["reps"],   # calls per block
+        "cold_fail_block": failed.get("block"),
+        "cold_error": failed.get("cold_error"), "cold_kind": failed.get("cold_kind"),
+        "cold_fail_latency": failed.get("cold_fail_latency"),
+        "retry_ok_call": failed.get("retry_ok_call"), "retry_ok_latency": failed.get("retry_ok_latency"),
+        "probes": [{"block": p["block"], "cold": p["cold"], "calls": p["calls"]} for p in probes],
+    }
 
 
 def fmt(x):
@@ -155,7 +187,11 @@ def main():
     ap.add_argument("--samples", type=int, default=12, help="samples per method per round (default 12)")
     ap.add_argument("--rounds", type=int, default=1, help="repeat the whole sweep N times (default 1)")
     ap.add_argument("--gap", type=float, default=15.0, help="seconds between rounds (default 15)")
-    ap.add_argument("--cache-reps", type=int, default=5, help="warm repeats in cache probe (default 5)")
+    ap.add_argument("--cache-blocks", type=int, default=10,
+                    help="random blocks per chain in cache probe = cold samples (default 10)")
+    ap.add_argument("--cache-reps", type=int, default=10, help="warm repeats per block in cache probe (default 10)")
+    ap.add_argument("--interval", type=float, default=0.5,
+                    help="min seconds between two cold (upstream) calls to the same chain (default 0.5)")
     ap.add_argument("--concurrency", type=int, default=12)
     ap.add_argument("--timeout", type=float, default=15.0)
     ap.add_argument("--limit", type=int, default=0)
@@ -171,8 +207,8 @@ def main():
         return 1
 
     print("=== stable latency + cache probe ===")
-    print("chains=%d  samples=%d x rounds=%d  cache_reps=%d  concurrency=%d" % (
-        len(chains), args.samples, args.rounds, args.cache_reps, args.concurrency))
+    print("chains=%d  samples=%d x rounds=%d  cache_blocks=%d x (1+%d)  interval=%ss  concurrency=%d" % (
+        len(chains), args.samples, args.rounds, args.cache_blocks, args.cache_reps, args.interval, args.concurrency))
 
     # ---- stable latency sweep ----
     t0 = time.perf_counter()
@@ -190,12 +226,14 @@ def main():
     cache_res = {}
     with cf.ThreadPoolExecutor(max_workers=args.concurrency) as ex:
         # distinct Random per chain for reproducibility-independence
-        futs = [ex.submit(cache_probe, c, args.cache_reps, args.timeout,
+        futs = [ex.submit(cache_probe, c, args.cache_blocks, args.cache_reps, args.timeout, args.interval,
                           random.Random((args.seed or int(time.time())) + c["chainId"])) for c in chains]
         for fut in cf.as_completed(futs):
             cid, out = fut.result()
             cache_res[cid] = out
-    print("cache probe done in %.1fs\n" % (time.perf_counter() - t1))
+    conns = conn_stats()
+    print("cache probe done in %.1fs  (%d requests over %d connections)\n" % (
+        time.perf_counter() - t1, conns["requests"], conns["connects"]))
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     _write_outputs(args, ts, lat_res, cache_res, name_by_id)
@@ -221,8 +259,8 @@ def _write_outputs(args, ts, lat_res, cache_res, name_by_id):
     cache_csv = "%s_cache_%s.csv" % (args.out, ts)
     with open(cache_csv, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["chainId", "name", "variant", "block", "cold_ms", "warm_med_ms",
-                    "warm_min_ms", "speedup_x", "saved_ms", "ok", "reps", "cold_error_kind", "cold_error"])
+        w.writerow(["chainId", "name", "variant", "blocks", "cold_ok", "cold_ms", "warm_med_ms",
+                    "warm_min_ms", "speedup_x", "saved_ms", "ok", "total", "cold_error_kind", "cold_error"])
         for cid, c in cache_res.items():
             for variant in ("fixed", "latest"):
                 v = c[variant]
@@ -230,13 +268,14 @@ def _write_outputs(args, ts, lat_res, cache_res, name_by_id):
                 speed = (cold / warm) if (cold and warm) else ""
                 saved = ((cold - warm) * 1000) if (cold and warm) else ""
                 w.writerow([cid, name_by_id.get(cid, ""), variant,
-                            c["block"] if variant == "fixed" else "",
+                            " ".join(map(str, c["blocks"])) if variant == "fixed" else "",
+                            "%d/%d" % (v["cold_ok"], v["n_blocks"]) if variant == "fixed" else "",
                             "" if cold is None else "%.0f" % (cold * 1000),
                             "" if warm is None else "%.0f" % (warm * 1000),
                             "" if v["warm_min"] is None else "%.0f" % (v["warm_min"] * 1000),
                             "" if speed == "" else "%.2f" % speed,
                             "" if saved == "" else "%.0f" % saved,
-                            v["ok"], v["reps"], v["cold_kind"] or "", v["cold_error"] or ""])
+                            v["ok"], v["total"], v["cold_kind"] or "", v["cold_error"] or ""])
     print("wrote %s" % raw)
     print("wrote %s" % lat_csv)
     print("wrote %s" % cache_csv)
@@ -289,14 +328,16 @@ def _report(lat_res, cache_res, name_by_id):
     for cid, cold, warm, sp in wins[:10]:
         print("  %-10s %s %s %7.1fx  %s" % (cid, fmt(cold), fmt(warm), sp, name_by_id.get(cid, "")[:28]))
 
-    # chains whose cold call failed -> no cold latency / speedup for them
-    failed = [(cid, c["fixed"]) for cid, c in cache_res.items() if c["fixed"]["cold"] is None]
-    print("\n=== cold call failed (fixed-block): %d chains, excluded from speedup ===" % len(failed))
+    # chains where some block's cold call failed (all blocks failed -> no cold latency / speedup)
+    failed = [(cid, c["fixed"]) for cid, c in cache_res.items() if c["fixed"]["cold_ok"] < c["fixed"]["n_blocks"]]
+    print("\n=== cold call failed (fixed-block): %d chains (failed blocks left out of the cold median) ===" % len(
+        failed))
     for cid, v in sorted(failed, key=lambda x: x[0]):
         after = ("call #%d ok %s ms" % (v["retry_ok_call"], fmt(v["retry_ok_latency"]).strip())
                  if v["retry_ok_call"] else "all %d calls failed" % v["reps"])
-        print("  %-10s %-14s %-22s %s | %s" % (
-            cid, ERROR_KINDS[v["cold_kind"]][0], after, name_by_id.get(cid, "")[:22], (v["cold_error"] or "")[:80]))
+        print("  %-10s %2d/%-2d blocks  %-14s %-22s %s | %s" % (
+            cid, v["n_blocks"] - v["cold_ok"], v["n_blocks"], ERROR_KINDS[v["cold_kind"]][0], after,
+            name_by_id.get(cid, "")[:22], (v["cold_error"] or "")[:80]))
 
     # high-jitter chains (unstable latency) on eth_blockNumber
     print("\n=== least stable chains (highest jitter on eth_blockNumber, top 10) ===")

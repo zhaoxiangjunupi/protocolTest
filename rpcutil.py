@@ -1,17 +1,23 @@
 """Shared helpers for testing the cryptostack RPC router.
 
-Stdlib only (urllib + json). No third-party deps.
+Stdlib only (http.client + json). No third-party deps.
 
 The router forwards JSON-RPC to upstream nodes at:  BASE/rpc/{chainId}
 Public read-only metadata is at:                    BASE/api/public/...
+
+Each worker thread keeps one keep-alive HTTPS connection to the router and
+reuses it for all its calls; the TCP+TLS handshake happens before the timer
+starts, so a call's latency is request -> full response only.
 """
+import http.client
 import json
+import ssl
+import threading
 import time
-import urllib.request
-import urllib.error
+from urllib.parse import urlsplit
 
 BASE = "https://rpc.cryptostack.ai"
-RPC_PATH = BASE + "/rpc/{chainId}"
+RPC_PATH = "/rpc/{chainId}"
 UA = "rpc-bench/1.0 (cryptostack latency+availability tester)"
 
 ZERO_ADDR = "0x0000000000000000000000000000000000000000"
@@ -77,6 +83,24 @@ def history_params(spec, head, rng):
     return [hex(blk), False]
 
 
+class Pacer:
+    """Keeps calls to one chain at least `interval` seconds apart (start to start).
+
+    Bursts of uncached calls trip upstream rate limits and the router then reports
+    "all upstream endpoints exhausted"; pacing keeps the test from causing that.
+    """
+
+    def __init__(self, interval):
+        self.interval = interval
+        self.next = 0.0
+
+    def wait(self):
+        now = time.perf_counter()
+        if now < self.next:
+            time.sleep(self.next - now)
+        self.next = max(now, self.next) + self.interval
+
+
 def live_head(chain, timeout):
     """Current head via eth_blockNumber; falls back to the catalog snapshot."""
     r = rpc_call(chain["chainId"], {"method": "eth_blockNumber", "params": []}, timeout=timeout)
@@ -133,29 +157,77 @@ def classify_error(err):
     return "other"
 
 
-def _http_json(url, payload, timeout):
-    """POST json, return (status, body_obj_or_text, elapsed_s, error_str)."""
+# ---- keep-alive transport ---------------------------------------------------
+_HOST = urlsplit(BASE).hostname
+_SSL_CTX = ssl.create_default_context()
+_local = threading.local()          # .conn: this thread's HTTPSConnection
+_stats_lock = threading.Lock()
+_stats = {"requests": 0, "connects": 0}
+
+
+def conn_stats():
+    """{requests, connects} since start: connects << requests means connections were reused."""
+    with _stats_lock:
+        return dict(_stats)
+
+
+def _drop_connection():
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
+        conn.close()
+
+
+def _connection(timeout):
+    """This thread's connection, (re)opened if needed. Returns (conn, reused)."""
+    conn = getattr(_local, "conn", None)
+    if conn is None:
+        conn = _local.conn = http.client.HTTPSConnection(_HOST, timeout=timeout, context=_SSL_CTX)
+    if conn.sock is not None:
+        conn.sock.settimeout(timeout)
+        return conn, True
+    conn.timeout = timeout
+    conn.connect()
+    with _stats_lock:
+        _stats["connects"] += 1
+    return conn, False
+
+
+def _http_json(path, payload, timeout):
+    """POST json over this thread's keep-alive connection.
+
+    Returns (status, body_obj_or_text, elapsed_s, error_str). elapsed_s excludes
+    the handshake. A reused connection the server has already closed is reopened
+    and the request sent again, once.
+    """
     data = json.dumps(payload).encode()
-    req = urllib.request.Request(
-        url, data=data, method="POST",
-        headers={"content-type": "application/json", "accept": "application/json", "user-agent": UA},
-    )
-    t0 = time.perf_counter()
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+    headers = {"content-type": "application/json", "accept": "application/json", "user-agent": UA}
+    with _stats_lock:
+        _stats["requests"] += 1
+    for attempt in (1, 2):
+        t0 = time.perf_counter()
+        try:
+            conn, reused = _connection(timeout)
+        except OSError as e:   # DNS / TCP / TLS failure or connect timeout
+            _drop_connection()
+            return None, None, time.perf_counter() - t0, "conn:%s" % (str(e) or type(e).__name__)
+        t0 = time.perf_counter()
+        try:
+            conn.request("POST", path, body=data, headers=headers)
+            resp = conn.getresponse()
             raw = resp.read()
+        except (http.client.HTTPException, OSError) as e:
             dt = time.perf_counter() - t0
-            try:
-                return resp.status, json.loads(raw), dt, None
-            except json.JSONDecodeError:
-                return resp.status, raw.decode("utf-8", "replace")[:300], dt, "non-json-body"
-    except urllib.error.HTTPError as e:
+            _drop_connection()
+            if reused and attempt == 1 and isinstance(e, ConnectionError):
+                continue   # idle connection closed by the server: reconnect and resend
+            return None, None, dt, "conn:%s" % (str(e) or type(e).__name__)
         dt = time.perf_counter() - t0
-        body = e.read().decode("utf-8", "replace")[:300] if e.fp else ""
-        return e.code, body, dt, "http-%s" % e.code
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
-        dt = time.perf_counter() - t0
-        return None, None, dt, "conn:%s" % (getattr(e, "reason", e),)
+        if not 200 <= resp.status < 300:
+            return resp.status, raw.decode("utf-8", "replace")[:300], dt, "http-%s" % resp.status
+        try:
+            return resp.status, json.loads(raw), dt, None
+        except ValueError:
+            return resp.status, raw.decode("utf-8", "replace")[:300], dt, "non-json-body"
 
 
 def rpc_call(chain_id, spec, timeout=15.0, req_id=1):
@@ -165,9 +237,8 @@ def rpc_call(chain_id, spec, timeout=15.0, req_id=1):
     ok == a valid JSON-RPC success response ("result" present, no "error");
     with spec["nonnull"], a null result is a failure too ("null-result").
     """
-    url = RPC_PATH.format(chainId=chain_id)
     payload = {"jsonrpc": "2.0", "id": req_id, "method": spec["method"], "params": spec["params"]}
-    status, body, dt, err = _http_json(url, payload, timeout)
+    status, body, dt, err = _http_json(RPC_PATH.format(chainId=chain_id), payload, timeout)
 
     if err:
         return {"ok": False, "latency": dt, "status": status, "error": err, "result": None}

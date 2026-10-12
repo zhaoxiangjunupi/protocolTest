@@ -36,7 +36,7 @@ from datetime import datetime, timezone
 
 from rpcutil import (
     SIMPLE_METHODS, COMPLEX_METHODS, HISTORY_METHODS, ALL_METHODS, METHOD_GROUP,
-    rpc_call, pct, load_chains, history_params, live_head, classify_error, ERROR_KINDS,
+    rpc_call, pct, load_chains, history_params, live_head, classify_error, ERROR_KINDS, conn_stats, Pacer,
 )
 
 MAJORS = {1, 56, 137, 8453, 42161, 10, 43114, 250, 100, 324, 59144, 534352, 5000, 81457}
@@ -62,42 +62,56 @@ def select_chains(items, spec, limit):
     return chosen
 
 
-def bench_chain(chain, methods, samples, timeout, seed):
-    """Run all methods*samples for one chain. Returns per-method aggregates."""
+def bench_chain(chain, methods, samples, timeout, seed, interval):
+    """Run all methods*samples for one chain. Returns per-method aggregates.
+
+    Samples are interleaved (round i calls every method once) and paced by
+    `interval`, so repeats of one method are spread over the whole run instead
+    of arriving at the upstream as a burst.
+    """
     cid = chain["chainId"]
-    per_method = {}
     head = head_src = None
     rng = random.Random(seed + cid)
+    pace = Pacer(interval)
     if any(METHOD_GROUP[m["id"]] == "history" for m in methods):
+        pace.wait()
         head, head_src = live_head(chain, timeout)
-    for spec in methods:
-        lats, errors, blocks = [], [], []
-        ok = total = 0
-        correct = None  # eth_chainId correctness, if applicable
-        skipped = None
-        for i in range(samples):
+    acc = {spec["id"]: {"lats": [], "errors": [], "blocks": [], "ok": 0, "total": 0,
+                        "correct": None,   # eth_chainId correctness, if applicable
+                        "skipped": None} for spec in methods}
+    for i in range(samples):
+        for spec in methods:
+            a = acc[spec["id"]]
+            if a["skipped"]:
+                continue
             call = spec
             if METHOD_GROUP[spec["id"]] == "history":
                 params = history_params(spec, head or 0, rng)
                 if params is None:
-                    skipped = "chain too short (head=%s)" % head
-                    break
+                    a["skipped"] = "chain too short (head=%s)" % head
+                    continue
                 call = dict(spec, params=params)
-                blocks.append(int(params[0], 16))
+                a["blocks"].append(int(params[0], 16))
+            pace.wait()
             r = rpc_call(cid, call, timeout=timeout, req_id=i + 1)
-            total += 1
+            a["total"] += 1
             if r["ok"] and spec["id"] == "eth_chainId":
                 try:
-                    correct = (int(r["result"], 16) == cid)
+                    a["correct"] = (int(r["result"], 16) == cid)
                 except (ValueError, TypeError):
-                    correct = False
-                if not correct:
+                    a["correct"] = False
+                if not a["correct"]:
                     r = dict(r, ok=False, error="wrong-chain: got %s" % r["result"])
             if r["ok"]:
-                ok += 1
-                lats.append(r["latency"])
+                a["ok"] += 1
+                a["lats"].append(r["latency"])
             else:
-                errors.append(r["error"])
+                a["errors"].append(r["error"])
+
+    per_method = {}
+    for spec in methods:
+        a = acc[spec["id"]]
+        lats, errors, ok, total = a["lats"], a["errors"], a["ok"], a["total"]
         kinds = Counter(classify_error(e) for e in errors)
         top_kind = kinds.most_common(1)[0][0] if kinds else None
         per_method[spec["id"]] = {
@@ -110,14 +124,14 @@ def bench_chain(chain, methods, samples, timeout, seed):
             "lat_p50": pct(lats, 50),
             "lat_p95": pct(lats, 95),
             "lat_max": max(lats) if lats else None,
-            "chainId_correct": correct,
+            "chainId_correct": a["correct"],
             # sample_error is an example of the most common cause
             "sample_error": next((e for e in errors if classify_error(e) == top_kind), None),
             "error_kind": top_kind,
             "errors": [{"error": e, "kind": classify_error(e), "n": n}
                        for e, n in Counter(errors).most_common()],
-            "blocks": blocks or None,
-            "skipped": skipped,
+            "blocks": a["blocks"] or None,
+            "skipped": a["skipped"],
         }
     return cid, {"head": head, "head_source": head_src, "methods": per_method}
 
@@ -132,8 +146,10 @@ def main():
                     help="'all' | 'traffic' | 'majors' | comma-list of chainIds (default: traffic)")
     ap.add_argument("--methods", default="all", choices=["simple", "complex", "history", "all"],
                     help="simple | complex | history (3 historical-block depths) | all (default)")
-    ap.add_argument("--samples", type=int, default=3, help="requests per (chain,method) (default 3)")
-    ap.add_argument("--concurrency", type=int, default=16, help="chains tested in parallel (default 16)")
+    ap.add_argument("--samples", type=int, default=10, help="requests per (chain,method) (default 10)")
+    ap.add_argument("--concurrency", type=int, default=32, help="chains tested in parallel (default 32)")
+    ap.add_argument("--interval", type=float, default=0.5,
+                    help="min seconds between two requests to the same chain (default 0.5; 0 = no pacing)")
     ap.add_argument("--timeout", type=float, default=15.0, help="per-request timeout seconds (default 15)")
     ap.add_argument("--limit", type=int, default=0, help="cap number of chains (0 = no cap)")
     ap.add_argument("--seed", type=int, default=0, help="RNG seed for historical block picks (0=time)")
@@ -153,15 +169,17 @@ def main():
 
     total_calls = len(chains) * len(methods) * args.samples
     print("=== RPC bench ===")
-    print("chains=%d  methods=%d (%s)  samples=%d  -> %d calls  | concurrency=%d timeout=%ss" % (
-        len(chains), len(methods), args.methods, args.samples, total_calls, args.concurrency, args.timeout))
+    print("chains=%d  methods=%d (%s)  samples=%d  -> %d calls  | concurrency=%d interval=%ss timeout=%ss" % (
+        len(chains), len(methods), args.methods, args.samples, total_calls, args.concurrency,
+        args.interval, args.timeout))
     print()
 
     t0 = time.perf_counter()
     results = {}
     done = 0
     with cf.ThreadPoolExecutor(max_workers=args.concurrency) as ex:
-        futs = {ex.submit(bench_chain, c, methods, args.samples, args.timeout, seed): c for c in chains}
+        futs = {ex.submit(bench_chain, c, methods, args.samples, args.timeout, seed, args.interval): c
+                for c in chains}
         for fut in cf.as_completed(futs):
             cid, res = fut.result()
             results[cid] = res
@@ -173,7 +191,8 @@ def main():
             print("  [%3d/%3d] chain %-10s  methods_full_ok=%d/%d  %s" % (
                 done, len(chains), cid, avail, ran, name_by_id.get(cid, "")[:28]))
     elapsed = time.perf_counter() - t0
-    print("\nwall time: %.1fs" % elapsed)
+    conns = conn_stats()
+    print("\nwall time: %.1fs  (%d requests over %d connections)" % (elapsed, conns["requests"], conns["connects"]))
 
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     # ---- write raw json ----
@@ -181,9 +200,9 @@ def main():
     with open(raw_path, "w") as f:
         json.dump({
             "meta": {"ts": ts, "chains": args.chains, "methods": args.methods,
-                     "samples": args.samples, "timeout": args.timeout, "seed": seed,
+                     "samples": args.samples, "interval": args.interval, "timeout": args.timeout, "seed": seed,
                      "total_calls": sum(m["total"] for r in results.values() for m in r["methods"].values()),
-                     "wall_seconds": round(elapsed, 2)},
+                     "wall_seconds": round(elapsed, 2), "connections": conns},
             "results": results,
         }, f, indent=2, default=str)
 
