@@ -300,6 +300,7 @@
         <th class="num">热路径 p50<small>ms</small></th>
         <th class="num">冷回源 p50<small>ms</small></th>
         <th class="num">缓存命中 p50<small>ms</small></th>
+        <th class="num">latest 缓存<small>s · 中位数</small></th>
         <th class="num">问题链<small>严重 / 警告</small></th>
         <th class="num">块高回退<small>链数</small></th>
       </tr></thead><tbody></tbody></table>
@@ -376,6 +377,32 @@
         <th>错误原文</th>
       </tr></thead><tbody></tbody></table>
     </div>
+    <div id="cmwrap">
+      <h3 class="sm" id="cmtitle"></h3>
+      <p class="secsub" id="cmsub" style="margin-bottom:10px"></p>
+      <div class="tablewrap">
+        <table id="cmtable"><thead><tr>
+          <th>方法</th><th>结论<small>悬停看例外的链</small></th>
+          <th class="num">缓存的链</th><th class="num">不缓存的链</th><th class="num">测不出<small>请求失败</small></th>
+          <th class="num">第 1 次 p50<small>ms</small></th>
+          <th class="num">重复请求 p50<small>ms · 命中缓存约 <span id="cmhit"></span></small></th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div id="ttlwrap">
+      <h3 class="sm" id="ttltitle"></h3>
+      <p class="secsub" id="ttlsub" style="margin-bottom:10px"></p>
+      <div class="card"><div class="bars" id="ttlbars"></div></div>
+      <h3 class="sm" id="ttlshorttitle"></h3>
+      <div class="tablewrap" style="max-height:460px;overflow-y:auto">
+        <table id="ttltable"><thead><tr>
+          <th>链</th><th class="num">chainId</th><th>层</th>
+          <th class="num">缓存时间<small>s</small></th>
+          <th class="num">出块间隔<small>s · 约</small></th>
+          <th>两次刷新的间隔<small>s · 测到的原始值，按时间顺序</small></th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+    </div>
   </section>
 
   <section>
@@ -442,6 +469,7 @@
         <th data-k="cold" class="num">冷回源<small>ms · 各区块第 1 次中位数</small></th>
         <th data-k="warm" class="num">缓存命中<small>ms · 后几次中位</small></th>
         <th data-k="speedup" class="num">加速<small>× · 冷 ÷ 命中</small></th>
+        <th data-k="ttl" class="num">latest 缓存<small>s · 悬停看回源间隔</small></th>
       </tr></thead><tbody></tbody></table>
     </div>
   </section>
@@ -462,7 +490,7 @@
 curl -s "https://rpc.cryptostack.ai/api/public/overview"         -o overview.json     # 路由器概览快照
 python3 classify_chains.py                                        # 分层 → chains_classified.csv
 python3 rpc_bench.py     --chains all --methods all --samples 10 --interval 0.5  # 常规 + 历史区块可用性
-python3 latency_cache.py --chains all --samples 12 --cache-blocks 10 --cache-reps 10 # 稳定延迟 + 缓存冷/热
+python3 latency_cache.py --chains all --samples 12 --cache-blocks 10 --cache-reps 10 # 稳定延迟 + 缓存冷/热 + 方法是否缓存 + latest 缓存时间
 python3 build_report.py                                           # 合并结果 → 生成新的报告页（含和历次运行的对比）
 ./run_all.sh                                                      # 或者一条命令跑完以上全部</pre>
     </div>
@@ -532,10 +560,16 @@ python3 build_report.py                                           # 合并结果
   // ---- header ----
   var issueN = D.issue_rows.length;
   var critN = D.issue_rows.filter(function(r){ return r.issues[0].level==='crit'; }).length;
+  var TT = D.cache_ttl, CM = D.cache_methods || [];
+  var uncached = CM.filter(function(m){ return m.verdict==='uncached'; });
+  // latest cache lifetime in seconds: 2 decimals below 1 s
+  function sec(v){ return v==null ? null : v < 1 ? v.toFixed(2) : v.toFixed(1); }
   $('summary').innerHTML = '对 <b>cryptostack RPC 路由器</b>正在服务的 <b>'+M.n_chains+'</b> 条链做了一轮体检：'
     + '常规请求（查最新区块等）可用率 <b>'+M.avail_regular+'%</b>，'
     + (M.avail_advanced!=null ? 'eth_call / 交易回执 / 批量等进阶方法可用率 <b>'+M.avail_advanced+'%</b>，' : '')
-    + '历史区块查询可用率 <b>'+M.avail_history+'%</b>；命中缓存后的延迟 p50 约 <b>'+M.hot_p50+' ms</b>。'
+    + '历史区块查询可用率 <b>'+M.avail_history+'%</b>；命中缓存后的延迟 p50 约 <b>'+M.hot_p50+' ms</b>'
+    + (TT && TT.p50!=null ? '，最新块高 / 余额这类请求缓存约 <b>'+sec(TT.p50)+' 秒</b>' : '')
+    + (CM.length ? '，测试的 '+CM.length+' 个方法里 <b>'+uncached.length+'</b> 个完全不缓存（见 08）' : '') + '。'
     + '共 <b>'+issueN+'</b> 条链有需要处理的问题（严重 '+critN+' · 警告 '+(issueN-critN)+'），见 02。';
   $('metaline').innerHTML =
     '<span>目标 <a href="https://'+esc(M.target)+'/" target="_blank" rel="noopener">'+esc(M.target)+'</a></span>'
@@ -566,6 +600,9 @@ python3 build_report.py                                           # 合并结果
      note:num(M.avail_history_ok)+' / '+num(M.avail_history_total)+' 次成功'+dlt(M.avail_history, PR&&PR.avail_history, true)},
     {lab:'热路径 p50', val:M.hot_p50, unit:'ms', note:'命中缓存后，各方法中位延迟'+dlt(M.hot_p50, PR&&PR.hot_p50, false, 'ms')},
     {lab:'缓存中位加速', val:CS.speedup_med, unit:'×', note:'冷回源 '+CS.cold_p50+'ms → 命中 '+CS.warm_p50+'ms'},
+    !TT || TT.p50==null ? null :
+    {lab:'latest 缓存时间', val:sec(TT.p50), unit:'s',
+     note:'各链中位数'+(CM.length ? ' · '+uncached.length+' 个方法不缓存' : '')},
     {lab:'有问题的链', val:issueN, unit:'条', cls:critN?'crit':issueN?'warn':'good', note:'严重 '+critN+' · 警告 '+(issueN-critN)+dlt(issueN, PR&&PR.n_issue, false)}
   ].filter(Boolean);
   $('kpis').innerHTML = kpis.map(function(k){
@@ -583,12 +620,14 @@ python3 build_report.py                                           # 合并结果
     ['冷回源', '缓存测试中每个随机近期区块第 1 次请求的耗时，取各区块的中位数。缓存里没有，路由器要去上游节点取，<b>反映上游速度</b>。'],
     ['缓存命中', '同一请求紧接着再发几次，耗时的中位数。此时已命中路由器缓存，基本等于你到路由器的网络往返（不含建连握手）。'],
     ['加速', '冷回源 ÷ 缓存命中。<b>越大说明上游越慢</b>、缓存帮的忙越大；但首次请求和不可缓存的请求享受不到。'],
+    CM.length ? ['不缓存的方法', '同一个请求紧接着重复发，每次耗时都和第 1 次一样（每次都去上游取），说明路由器<b>不缓存这个方法</b>，用户每次都要等上游。缓存的 key 包含参数：换个地址、换个区块号都算新请求。'] : null,
+    TT ? ['latest 缓存时间', '查最新数据的请求（最新块高、余额等）的结果在缓存里<b>保留多久</b>。这段时间内的重复请求直接命中缓存，过期后的第一次要回源。用 eth_blockNumber 每 '+TT.poll+' 秒请求一次，量两次回源的间隔。'] : null,
     ['抖动', 'eth_blockNumber 连续 '+M.lat_samples+' 次请求耗时的<b>标准差</b>。越大说明延迟越不稳定，时快时慢。'],
     ['块高回退', '可用性测试中按顺序调用 eth_blockNumber，后一次返回的块高<b>比之前见过的还低</b>。说明路由器把请求分给了高度不同的上游节点，用户可能先看到新块、再看到旧块。'],
     ['分层 A/B/C', '按活跃上游节点数：A ≥10，B 4–9，C ≤3。<span class="dotsp">▲</span> 单点 = 只有 1 个活跃节点，这个节点一挂整条链就不可用。'],
     ['表格标记', '<span class="badge fail">失败</span> 这项请求失败了；<span class="badge part">7/10</span> 部分失败；<span class="badge ok">10/10</span> 全部成功；<span class="badge skip">未测</span> 不适用；<span class="na">—</span> 无法计算（依赖的数据失败了）。'],
     ['问题级别', '<span class="chip crit">严重</span> 整链不可用、连近期区块都查不到、返回错链；<span class="chip warn">警告</span> 部分请求失败、进阶方法失败、历史区块缺失、块高回退、首次请求失败、上游慢；<span class="chip info">提示</span> 单点、抖动大、小幅块高回退。']
-  ];
+  ].filter(Boolean);
   $('gloss').innerHTML = gloss.map(function(g){
     return '<div class="gi"><span class="gk">'+g[0]+'</span><span class="gv">'+g[1]+'</span></div>';
   }).join('');
@@ -652,7 +691,8 @@ python3 build_report.py                                           # 合并结果
         + '<td style="white-space:normal;min-width:200px;font-size:12px;color:var(--fg-2)">'+esc(r.method)+'</td>'
         + '<td class="num">'+r.n_chains+'</td><td class="num">'+f(r.avail_regular)+'</td><td class="num">'+f(r.avail_advanced)+'</td>'
         + '<td class="num">'+f(r.avail_history)+'</td><td class="num">'+f(r.hot_p50)+'</td><td class="num">'+f(r.cold_p50)+'</td>'
-        + '<td class="num">'+f(r.warm_p50)+'</td><td class="num">'+r.n_crit+' / '+(r.n_issue-r.n_crit)+'</td>'
+        + '<td class="num">'+f(r.warm_p50)+'</td><td class="num">'+f(sec(r.ttl_p50))+'</td>'
+        + '<td class="num">'+r.n_crit+' / '+(r.n_issue-r.n_crit)+'</td>'
         + '<td class="num">'+(r.n_head_back==null?'<span class="na">—</span>':r.n_head_back)+'</td></tr>';
     }).join('');
     if (!P){ $('trendchanges').hidden = true; return; }
@@ -779,6 +819,74 @@ python3 build_report.py                                           # 合并结果
     }).join('') || '<tr><td colspan="6" class="na">没有冷请求失败的链</td></tr>';
   })();
 
+  // which methods are cached
+  function names(rows, more){
+    return rows.slice(0, 30).map(function(r){ return esc(r.name)+' ('+r.chainId+')'+(more ? more(r) : ''); }).join('、')
+      + (rows.length > 30 ? ' 等 '+rows.length+' 条' : '');
+  }
+  (function(){
+    if (!CM.length){ $('cmwrap').hidden = true; return; }
+    var calls = CM[0].calls;
+    $('cmtitle').textContent = '哪些方法会缓存 · '+CM.length+' 个方法，'+uncached.length+' 个不缓存';
+    $('cmhit').textContent = CS.warm_p50;
+    $('cmsub').innerHTML = '每条链每个方法<b>紧挨着连发 '+calls+' 次</b>。重复请求的耗时接近缓存命中（≤ 这条链缓存命中耗时 + max(2.5 ms, 命中耗时的一半)）就算命中，多数命中判为<b>缓存</b>；'
+      + '否则每次都去上游取，判为<b>不缓存</b>，用户每次都要等上游。缓存的 key 包含参数，换地址、换区块号都要重新回源。'
+      + '按多数链的结果下结论，超过 10% 的链结论不同时标为「部分链缓存」；结论不同的链悬停可见（上游很快的链，回源也只要几毫秒，可能被误判）。';
+    var V = {cached:['ok','缓存'], uncached:['fail','不缓存'], mixed:['part','部分链缓存'], unknown:['skip','测不出']};
+    document.querySelector('#cmtable tbody').innerHTML = CM.map(function(m){
+      var v = V[m.verdict], extra = [];
+      if (m.odd.length) extra.push('<b>和多数链结论不同的链</b>（第 1 次 → 重复请求中位 ms）：'+names(m.odd, function(r){
+        return ' '+(r.first!=null?r.first:'失败')+'→'+r.rep; }));
+      if (m.unknown.length) extra.push('<b>测不出</b>（请求失败）：'+names(m.unknown, function(r){ return ' '+esc(kl(r.kind)); })
+        + '<span class="tm">'+esc(m.unknown[0].msg)+'</span>');
+      var badge = '<span class="badge '+v[0]+'"'+(extra.length ? T(extra.join('<br>')) : '')+'>'+v[1]
+        + (m.verdict!=='mixed' && m.odd.length ? ' · 例外 '+m.odd.length : '')+'</span>';
+      return '<tr><td><code>'+esc(m.label)+'</code></td><td>'+badge+'</td>'
+        + '<td class="num">'+m.n_cached+'</td><td class="num '+(m.n_uncached?'v-warn':'')+'">'+m.n_uncached+'</td>'
+        + '<td class="num">'+(m.n_unknown||'<span class="na">0</span>')+'</td>'
+        + '<td class="num">'+(m.first_p50!=null?num(m.first_p50):'<span class="na">—</span>')+'</td>'
+        + '<td class="num '+(m.verdict==='uncached'?'v-warn':'')+'">'+(m.rep_p50!=null?num(m.rep_p50):'<span class="na">—</span>')+'</td></tr>';
+    }).join('');
+  })();
+
+  // latest cache lifetime
+  function ttlCell(f){
+    if (!f) return '<span class="na">—</span>';
+    if (f.kind==='skip') return '<span class="badge skip"'+T('<b>未测</b><br>'+esc(f.reason))+'>未测</span>';
+    var tip = '每 '+f.poll+' 秒请求一次 eth_blockNumber，共 '+f.n+' 次，其中 '+f.n_miss+' 次回源'+(f.n_err?'、'+f.n_err+' 次失败':'')
+      + (f.gaps && f.gaps.length ? '<br>两次刷新的间隔：'+f.gaps.map(function(g){ return g.toFixed(2); }).join('、')+' s' : '')
+      + (f.block_s!=null ? '<br>出块间隔约 '+sec(f.block_s)+' s' : '')
+      + (f.err ? '<br>失败原因：'+esc(kl(f.ekind))+'<span class="tm">'+esc(f.err)+'</span>' : '');
+    if (f.kind==='none') return '<span class="badge part"'+T('<b>不缓存</b>：每次请求都回源<br>'+tip)+'>不缓存</span>';
+    if (f.kind==='min') return '<span'+T('<b>至少 '+f.min.toFixed(1)+' s</b>：测试窗口内没有第二次刷新<br>'+tip)+' style="border-bottom:1px dashed currentColor">≥ '+f.min.toFixed(0)+'</span>';
+    if (f.kind==='unknown') return '<span class="na"'+T('<b>测不出</b><br>'+tip)+'>—</span>';
+    return '<span'+T('<b>缓存约 '+sec(f.s)+' s</b><br>'+tip)+' style="border-bottom:1px dashed var(--muted)">'+sec(f.s)+'</span>';
+  }
+  (function(){
+    if (!TT){ $('ttlwrap').hidden = true; return; }
+    $('ttltitle').textContent = 'latest 类请求的缓存时间 · 中位数 '+sec(TT.p50)+' s';
+    $('ttlsub').innerHTML = '每条链用 <code>eth_blockNumber</code> <b>每 '+TT.poll+' 秒请求一次</b>（最多 '+TT.window+' 秒），耗时明显高于缓存命中的就是回源，'
+      + '两次刷新的间隔就是缓存保留的时间。<b>缓存时间越短，热门的最新数据越难命中缓存</b>：比如缓存 0.3 秒、用户每秒查一次，就几乎每次都要等上游。'
+      + '只测了 eth_blockNumber 一个方法。下方列出缓存时间短于 '+TT.short_s+' 秒的链，可以和它的出块间隔对照。';
+    var total = TT.buckets.reduce(function(a,b){ return a+b.chains.length; }, 0), max = 0;
+    TT.buckets.forEach(function(b){ max = Math.max(max, b.chains.length); });
+    $('ttlbars').innerHTML = TT.buckets.map(function(b){
+      var n = b.chains.length, w = max ? n/max*100 : 0;
+      return '<div class="barrow f3"><div class="name">'+esc(b.label)+'</div>'
+        + '<div class="track"'+(n ? T('<b>'+esc(b.label)+' · '+n+' 条链</b><br>'+names(b.chains, function(r){ return r.ttl ? ' '+sec(r.ttl)+'s' : ''; })) : '')+'>'
+        + '<div class="fill" style="width:'+w+'%;background:var(--s-aqua)">'+(w>12?'<span class="vlab">'+n+'</span>':'')+'</div>'
+        + (w>12 ? '' : '<span class="vlab out" style="left:'+w+'%">'+n+'</span>')+'</div>'
+        + '<div class="fc" style="color:var(--fg-2)">'+(total ? Math.round(n/total*100)+'%' : '')+'</div></div>';
+    }).join('');
+    $('ttlshorttitle').textContent = '缓存时间短于 '+TT.short_s+' 秒、不缓存或测不出的链 · '+TT.short.length+' 条';
+    document.querySelector('#ttltable tbody').innerHTML = TT.short.map(function(r){
+      return '<tr><td>'+esc(r.name)+'</td><td class="num">'+r.chainId+'</td><td>'+pill(r.tier)+'</td>'
+        + '<td class="num">'+ttlCell(r)+'</td>'
+        + '<td class="num">'+(r.block_s!=null?sec(r.block_s):'<span class="na">—</span>')+'</td>'
+        + '<td class="seq">'+(r.gaps && r.gaps.length ? r.gaps.map(function(g){ return g.toFixed(2); }).join(' ') : (r.reason ? esc(r.reason) : '<span class="na">—</span>'))+'</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="na">所有链的 latest 缓存时间都不短于 '+TT.short_s+' 秒</td></tr>';
+  })();
+
   // ---- 08 jitter ----
   $('jitsub').innerHTML = '抖动 = <code>eth_blockNumber</code> 连续 '+M.lat_samples+' 次请求耗时的<b>标准差</b>。p50 正常但抖动大，说明大部分请求很快、偶尔有几次很慢，'
     + '通常是上游池里有不稳定的节点，这些链适合加节点或换上游。下表是抖动最大的 '+D.jitter_top.length+' 条链（≥ '+M.thresholds.jitter_ms+' ms 会标为「延迟抖动大」）。';
@@ -857,7 +965,8 @@ python3 build_report.py                                           # 合并结果
         + '<td class="num">'+(r.p50!=null?r.p50:NA)+'</td>'
         + '<td class="num">'+coldCell+'</td>'
         + '<td class="num">'+warmCell+'</td>'
-        + '<td class="num">'+spCell+'</td></tr>';
+        + '<td class="num">'+spCell+'</td>'
+        + '<td class="num">'+ttlCell(r.ttlf)+'</td></tr>';
     }
     function render(){
       var term = q.value.trim().toLowerCase(), tf = tierf.value, lf = levelf.value, sp = spf.checked;
@@ -876,7 +985,7 @@ python3 build_report.py                                           # 合并结果
         var d = typeof x==='string' ? x.localeCompare(y) : x-y;
         return (sortAsc ? d : -d) || a.chainId-b.chainId;
       });
-      tbody.innerHTML = list.map(cells).join('') || '<tr><td colspan="12" class="na">没有符合条件的链</td></tr>';
+      tbody.innerHTML = list.map(cells).join('') || '<tr><td colspan="13" class="na">没有符合条件的链</td></tr>';
       rc.textContent = list.length + ' / ' + rows.length + ' 条';
       Array.prototype.forEach.call(document.querySelectorAll('#alltable thead th'), function(th){
         th.classList.toggle('sorted', th.dataset.k===sortK);
@@ -910,8 +1019,17 @@ python3 build_report.py                                           # 合并结果
     ['块高回退', '可用性测试中按调用顺序记录 eth_blockNumber 的返回值，统计比之前见过的最大值还低的次数和幅度。'],
     ['延迟测试', '5 个方法每条链各连续请求 '+M.lat_samples+' 次（链内串行、链间并行），算 p50 / p95 / 标准差。所有请求复用 keep-alive 连接，<b>耗时不含 TCP/TLS 握手</b>。'],
     ['缓存冷/热', '每条链随机取 '+CS.blocks+' 个近期区块（实时块高往前 200–800 块），每个区块同一请求连发 '+CS.reps+' 次：第 1 次为冷回源，取各区块的中位数；之后成功的请求取中位数为缓存命中。若某区块第 1 次失败，则跳过它第一个成功的（它才是真正的回源）。各区块的冷回源请求之间至少间隔 '+M.bench_interval+' 秒。'],
+    CM.length ? ['方法是否缓存', CM.length+' 个方法（'+CM.map(function(m){ return esc(m.label); }).join(' · ')+'）每条链各紧挨着请求 '+CM[0].calls+' 次。'
+      + '第 1 次之后的请求耗时 ≤ 这条链缓存命中耗时（固定区块测试的中位数）+ max(2.5 ms, 命中耗时的一半) 算命中，多数命中判为缓存。'
+      + '选的都是响应很小的请求，避免把传输大响应的时间误当成回源；固定区块加速 &lt; 1.3× 的链缓存本身没生效，不测。'
+      + '第 1 次就失败的方法不再重复（测不出）：同一条链连续几次失败的请求会让路由器把这条链的上游全部摘掉好几分钟。'] : null,
+    TT ? ['latest 缓存时间', '每条链用 eth_blockNumber 每 '+TT.poll+' 秒请求一次，最多 '+TT.window+' 秒，收集到 5 个间隔就停。'
+      + '耗时超过「缓存命中耗时和冷回源耗时的几何平均」（且不低于上面的命中阈值）算回源，比上面宽松：负载下命中偶尔慢几毫秒，误当成回源会把一个周期切成两段；'
+      + '返回的块高和上一次不同也算回源（缓存里的答案不会变），这样几毫秒就能返回的快上游也能被认出来。'
+      + '连续几次回源算同一次刷新。缓存时间 = 一次刷新结束到下一次回源开始的间隔取中位数，再减去轮询间隔的一半（过期发生在最后一次命中和这次回源之间）。'
+      + '前 10 次全部回源判为不缓存，前 10 次全部失败就停；窗口内只刷新一次时只能给下限（≥）。出块间隔由可用性测试中 eth_blockNumber 的增长速度估算。'] : null,
     ['错误分类', '按上游返回的错误原文归类（见下表）。同一个（链, 方法）出现多种错误时，取出现次数最多的那种，并附一条原文。']
-  ].map(function(x){ return '<div class="mi"><span class="k">'+x[0]+'</span><span class="v">'+x[1]+'</span></div>'; }).join('');
+  ].filter(Boolean).map(function(x){ return '<div class="mi"><span class="k">'+x[0]+'</span><span class="v">'+x[1]+'</span></div>'; }).join('');
   document.querySelector('#kindtable tbody').innerHTML = Object.keys(K).map(function(k){
     return '<tr><td><b>'+esc(K[k].label)+'</b></td><td><code>'+k+'</code></td><td class="long">'+esc(K[k].desc)+'</td></tr>';
   }).join('');

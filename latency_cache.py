@@ -22,6 +22,23 @@ Two things the first-pass bench did not do:
    as a failure. When call #1 fails we record why, how long it took, and which
    later call first succeeded (i.e. the router did not fail over by itself).
 
+3. WHICH METHODS ARE CACHED
+   Each method of CACHE_METHODS is called 1+--method-reps times back-to-back.
+   A repeat is a hit when it takes at most the chain's cache-hit latency (the
+   fixed-block warm median) + max(2.5 ms, half of it); the method is cached on
+   the chain when most repeats are hits. Uncached methods reach an upstream on
+   every call (some upstreams answer in 5-10 ms, so the margin is kept tight).
+
+4. LATEST CACHE LIFETIME
+   eth_blockNumber is polled every --ttl-poll seconds for up to --ttl-window
+   seconds. A call slower than the geometric mean of the chain's hit and cold
+   latencies (at least the hit limit above), or returning another block number
+   than the call before, reached an upstream (the cached answer had expired);
+   back-to-back upstream calls count as one refresh. Lifetime = median
+   time from one refresh's end to the next one's start, minus half a poll interval
+   (the answer expired somewhere in the last one). No second refresh in the
+   window -> a lower bound; no hit at all -> not cached.
+
 Examples
 --------
   python3 latency_cache.py --chains traffic --samples 12
@@ -32,15 +49,54 @@ import argparse
 import concurrent.futures as cf
 import csv
 import json
+import math
 import random
 import statistics
 import sys
 import time
 from datetime import datetime, timezone
 
-from rpcutil import rpc_call, pct, load_chains, live_head, classify_error, ERROR_KINDS, conn_stats, Pacer
+from rpcutil import (rpc_call, pct, load_chains, live_head, classify_error, ERROR_KINDS, conn_stats, Pacer,
+                     ADVANCED_METHODS, ZERO_ADDR)
 
 MAJORS = {1, 56, 137, 8453, 42161, 10, 43114, 250, 100, 324, 59144, 534352, 5000, 81457}
+BENEFIT_X = 1.3      # fixed-block speedup below this: the chain's cache does not work, skip tests 3 and 4
+# a call is a cache hit when it takes <= the chain's hit latency + max(this, half of it) (s):
+# 99.8% of the fixed-block hits fall within, only 0.8% of the cold calls do (2026-10-12 run)
+HIT_SLACK = 0.0025
+
+_ADV = {m["id"]: m for m in ADVANCED_METHODS}
+# methods checked for "does the router cache it"; all answers are small, so a hit
+# is not slowed down by the payload. block_fixed gets a fresh random block per chain.
+CACHE_METHODS = [
+    {"id": "eth_chainId",             "method": "eth_chainId",             "params": []},
+    {"id": "net_version",             "method": "net_version",             "params": []},
+    {"id": "web3_clientVersion",      "method": "web3_clientVersion",      "params": []},
+    {"id": "eth_blockNumber",         "method": "eth_blockNumber",         "params": []},
+    {"id": "eth_gasPrice",            "method": "eth_gasPrice",            "params": []},
+    {"id": "eth_getBalance",          "method": "eth_getBalance",          "params": [ZERO_ADDR, "latest"]},
+    {"id": "eth_getTransactionCount", "method": "eth_getTransactionCount", "params": [ZERO_ADDR, "latest"]},
+    {"id": "eth_getLogs", "method": "eth_getLogs", "label": "eth_getLogs (latest, 过滤地址)",
+     "params": [{"fromBlock": "latest", "toBlock": "latest", "address": ZERO_ADDR}]},
+    {"id": "block_latest", "method": "eth_getBlockByNumber", "label": "eth_getBlockByNumber (latest)",
+     "params": ["latest", False], "nonnull": True},
+    {"id": "block_fixed", "method": "eth_getBlockByNumber", "label": "eth_getBlockByNumber (固定区块)",
+     "nonnull": True},
+    dict(_ADV["eth_call"], label="eth_call (预编译合约)"),
+    dict(_ADV["eth_estimateGas"], label="eth_estimateGas (转账)"),
+]
+TTL_SPEC = {"id": "eth_blockNumber", "method": "eth_blockNumber", "params": []}
+
+
+def hit_limit(ref):
+    return ref + max(HIT_SLACK, ref / 2)
+
+
+def miss_limit(ref, cold):
+    """Above this a lifetime poll reached an upstream. Looser than hit_limit: under load a hit
+    sometimes takes a few ms more, and one such call taken for a refresh would split a
+    lifetime in two, while a fast upstream call taken for a hit only merges two."""
+    return max(hit_limit(ref), math.sqrt(ref * cold))
 
 # methods used for the stable-latency sweep (mix of simple + complex, all generic)
 LAT_METHODS = [
@@ -99,8 +155,9 @@ def stable_latency(chain, samples, rounds, gap, timeout):
     return cid, out
 
 
-def cache_probe(chain, blocks, reps, timeout, interval, rng):
-    """cold vs warm latency on `blocks` fixed (cacheable) blocks, and for 'latest'."""
+def cache_probe(chain, blocks, reps, timeout, interval, rng, method_reps, ttl_window, ttl_poll):
+    """cold vs warm latency on `blocks` fixed (cacheable) blocks and for 'latest', then
+    which methods are cached and how long a latest answer stays cached."""
     cid = chain["chainId"]
     head, head_src = live_head(chain, timeout)
     # fixed, immutable blocks, randomized so they are very likely cold. Kept recent
@@ -149,9 +206,106 @@ def cache_probe(chain, blocks, reps, timeout, interval, rng):
     probes = [dict(run({"id": "fixed_block", "method": "eth_getBlockByNumber",
                         "params": [hex(b), False], "nonnull": True}), block=b) for b in picks]
     fixed = merge_probes(probes)
-    return cid, {"fixed": fixed, "latest": run(latest_spec),
-                 "block": fixed["cold_fail_block"] or picks[0], "blocks": picks,
-                 "head": head, "head_source": head_src}
+    out = {"fixed": fixed, "latest": run(latest_spec),
+           "block": fixed["cold_fail_block"] or picks[0], "blocks": picks,
+           "head": head, "head_source": head_src}
+
+    # tests 3 and 4 tell hits from upstream calls by the fixed blocks' hit latency
+    ref = fixed["warm_med"]
+    if ref is None or fixed["cold"] is None:
+        out["skip"] = "固定区块缓存测试没有拿到冷回源 / 缓存命中耗时"
+    elif fixed["cold"] / ref < BENEFIT_X:
+        out["skip"] = "这条链的缓存没有生效(固定区块加速 %.1f×)" % (fixed["cold"] / ref)
+    else:
+        rest = sorted(set(range(head - 800, head - 199)) - set(picks)) if head > 1000 else []
+        fresh = hex(rng.choice(rest)) if rest else None
+        specs = [dict(s, params=[fresh, False]) if s["id"] == "block_fixed" else s
+                 for s in CACHE_METHODS if s["id"] != "block_fixed" or fresh]
+        out["ref"] = ref
+        out["methods"] = method_cache(cid, specs, method_reps, hit_limit(ref), timeout, pace)
+        out["ttl"] = latest_ttl(cid, miss_limit(ref, fixed["cold"]), ttl_window, ttl_poll, timeout)
+    return cid, out
+
+
+def method_cache(cid, specs, reps, limit, timeout, pace):
+    """Each spec 1+reps times back-to-back: cached when most repeats take <= limit (s)."""
+    out = {}
+    for spec in specs:
+        pace.wait()     # the first call may reach an upstream
+        calls = [rpc_call(cid, spec, timeout=timeout, req_id=1)]
+        # no repeats after a failure: a few failed calls in a row (e.g. eth_estimateGas
+        # on ZK Stack chains) make the router take every upstream of the chain out for
+        # minutes ("all upstream endpoints exhausted" for all methods)
+        if calls[0]["ok"]:
+            calls += [rpc_call(cid, spec, timeout=timeout, req_id=i + 2) for i in range(reps)]
+        lats = [c["latency"] if c["ok"] else None for c in calls]
+        rep = [x for x in lats[1:] if x is not None]
+        hits = sum(1 for x in rep if x <= limit)
+        err = next((c["error"] for c in calls if c["error"]), None)
+        out[spec["id"]] = {
+            "label": spec.get("label", spec["id"]),
+            "cached": (hits * 2 > len(rep)) if len(rep) >= 2 else None,
+            "first": lats[0], "rep": rep, "rep_med": statistics.median(rep) if rep else None,
+            "hits": hits, "n": len(rep), "ok": sum(1 for c in calls if c["ok"]), "total": len(calls),
+            "error": err, "kind": classify_error(err), "limit": limit,
+        }
+    return out
+
+
+def latest_ttl(cid, limit, window, poll, timeout, want=5, give_up=10):
+    """Poll eth_blockNumber; lifetime = median gap from the end of one refresh to the next one's start.
+
+    A call reached an upstream when it took more than `limit` (s) or returned another
+    block number than the call before (a cached answer cannot change; this catches
+    upstreams that answer within a few ms). A refresh is a run of upstream calls with
+    no hit in between (the router sometimes goes upstream several times in a row
+    right after expiry), so a gap is only measured when an upstream call follows a
+    hit. Stops after `want` gaps, or when the first `give_up` answers all came from an
+    upstream (not cached) or the first `give_up` calls all failed."""
+    t0 = time.perf_counter()
+    pts, gaps, last_end, prev_hit, n_err, err, prev_val = [], [], None, False, 0, None, None
+    while time.perf_counter() - t0 < window and len(gaps) < want:
+        start = time.perf_counter()
+        r = rpc_call(cid, TTL_SPEC, timeout=timeout)
+        end = time.perf_counter()
+        try:
+            val = int(r["result"], 16) if r["ok"] else None
+        except (TypeError, ValueError):
+            val = None
+        hit = r["ok"] and r["latency"] <= limit and (val is None or prev_val is None or val == prev_val)
+        prev_val = val if val is not None else prev_val
+        pts.append([round(start - t0, 3), round(r["latency"] * 1000, 1) if r["ok"] else None, hit, val])
+        if not r["ok"]:
+            n_err += 1
+            err = err or r["error"]
+            last_end = None   # a failed call breaks the chain of refreshes
+        elif not hit:
+            if prev_hit and last_end is not None:
+                gaps.append(start - last_end)
+            last_end = end
+        prev_hit = hit
+        if len(pts) - n_err >= give_up and not any(p[2] for p in pts):
+            break
+        if n_err >= give_up and n_err == len(pts):
+            break
+        time.sleep(poll)
+    now = time.perf_counter()
+    n_miss = sum(1 for _, ms_, hit, _ in pts if ms_ is not None and not hit)
+    # no two upstream calls in a row: the answer stayed cached at least since the
+    # last upstream call (or the start); unknown when a failed call came after it
+    ttl_min = None
+    if not gaps and n_miss + n_err < len(pts) and (last_end is not None or n_miss == 0):
+        ttl_min = round(now - (last_end or t0), 2)
+    return {
+        # the answer expired between the last hit and the upstream call (one poll
+        # interval): take the middle of that interval
+        "ttl": max(0.0, statistics.median(gaps) - poll / 2) if gaps else None, "ttl_min": ttl_min,
+        # every call reached an upstream: not cached for even one poll interval
+        "all_miss": n_miss >= 2 and n_miss == len(pts) - n_err,
+        "gaps": [round(g, 3) for g in gaps], "n_miss": n_miss, "n": len(pts), "n_err": n_err,
+        "error": err, "kind": classify_error(err), "limit": limit,
+        "poll": poll, "window": window, "points": pts,
+    }
 
 
 def merge_probes(probes):
@@ -192,6 +346,12 @@ def main():
     ap.add_argument("--cache-reps", type=int, default=10, help="warm repeats per block in cache probe (default 10)")
     ap.add_argument("--interval", type=float, default=0.5,
                     help="min seconds between two cold (upstream) calls to the same chain (default 0.5)")
+    ap.add_argument("--method-reps", type=int, default=3,
+                    help="repeats after the first call when checking whether a method is cached (default 3)")
+    ap.add_argument("--ttl-window", type=float, default=15.0,
+                    help="max seconds of eth_blockNumber polling per chain for the latest cache lifetime (default 15)")
+    ap.add_argument("--ttl-poll", type=float, default=0.1,
+                    help="pause between two polls = resolution of the lifetime (default 0.1)")
     ap.add_argument("--concurrency", type=int, default=12)
     ap.add_argument("--timeout", type=float, default=15.0)
     ap.add_argument("--limit", type=int, default=0)
@@ -209,6 +369,8 @@ def main():
     print("=== stable latency + cache probe ===")
     print("chains=%d  samples=%d x rounds=%d  cache_blocks=%d x (1+%d)  interval=%ss  concurrency=%d" % (
         len(chains), args.samples, args.rounds, args.cache_blocks, args.cache_reps, args.interval, args.concurrency))
+    print("cached? %d methods x (1+%d)  latest lifetime: poll %ss for <= %ss" % (
+        len(CACHE_METHODS), args.method_reps, args.ttl_poll, args.ttl_window))
 
     # ---- stable latency sweep ----
     t0 = time.perf_counter()
@@ -227,7 +389,8 @@ def main():
     with cf.ThreadPoolExecutor(max_workers=args.concurrency) as ex:
         # distinct Random per chain for reproducibility-independence
         futs = [ex.submit(cache_probe, c, args.cache_blocks, args.cache_reps, args.timeout, args.interval,
-                          random.Random((args.seed or int(time.time())) + c["chainId"])) for c in chains]
+                          random.Random((args.seed or int(time.time())) + c["chainId"]),
+                          args.method_reps, args.ttl_window, args.ttl_poll) for c in chains]
         for fut in cf.as_completed(futs):
             cid, out = fut.result()
             cache_res[cid] = out
@@ -338,6 +501,29 @@ def _report(lat_res, cache_res, name_by_id):
         print("  %-10s %2d/%-2d blocks  %-14s %-22s %s | %s" % (
             cid, v["n_blocks"] - v["cold_ok"], v["n_blocks"], ERROR_KINDS[v["cold_kind"]][0], after,
             name_by_id.get(cid, "")[:22], (v["cold_error"] or "")[:80]))
+
+    # which methods are cached
+    tested = [c for c in cache_res.values() if "methods" in c]
+    print("\n=== cached methods (%d chains tested, %d skipped) ===" % (len(tested), len(cache_res) - len(tested)))
+    print("  %-34s %7s %8s %8s %12s" % ("method", "cached", "uncached", "unknown", "repeat_p50"))
+    for spec in CACHE_METHODS:
+        vs = [c["methods"][spec["id"]] for c in tested if spec["id"] in c["methods"]]
+        print("  %-34s %7d %8d %8d %s" % (
+            spec.get("label", spec["id"])[:34], sum(1 for v in vs if v["cached"]),
+            sum(1 for v in vs if v["cached"] is False), sum(1 for v in vs if v["cached"] is None),
+            fmt(pct([v["rep_med"] for v in vs if v["rep_med"] is not None], 50)).rjust(12)))
+
+    # latest cache lifetime
+    ttls = [(cid, c["ttl"]) for cid, c in cache_res.items() if "ttl" in c]
+    vals = [t["ttl"] for _, t in ttls if t["ttl"] is not None]
+    print("\n=== latest cache lifetime (eth_blockNumber): median %s s over %d chains, "
+          "%d not cached, %d longer than the window, %d unknown ===" % (
+              "-" if not vals else "%.2f" % pct(vals, 50), len(vals), sum(1 for _, t in ttls if t["all_miss"]),
+              sum(1 for _, t in ttls if t["ttl_min"] is not None),
+              sum(1 for _, t in ttls if t["ttl"] is None and t["ttl_min"] is None)))
+    for cid, t in sorted(ttls, key=lambda x: (x[1]["ttl"] is None, x[1]["ttl"] or 0))[:10]:
+        print("  %-10s %6s s  gaps %s  %s" % (cid, "-" if t["ttl"] is None else "%.2f" % t["ttl"],
+                                             t["gaps"], name_by_id.get(cid, "")[:28]))
 
     # high-jitter chains (unstable latency) on eth_blockNumber
     print("\n=== least stable chains (highest jitter on eth_blockNumber, top 10) ===")

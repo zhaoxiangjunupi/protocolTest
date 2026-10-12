@@ -42,6 +42,17 @@ JITTER_MS = 200         # eth_blockNumber stdev at/above this -> "抖动大"
 BENEFIT_X = 1.3         # speedup at/above this counts as "cache helps"
 HEAD_BACK_WARN = 3      # eth_blockNumber went back this many blocks or more -> warn (less -> info)
 TREND_RUNS = 8          # runs shown in the trend section (this one included)
+SHORT_TTL_S = 1.5       # latest answers cached shorter than this (s) are listed in section 08
+ODD_SHARE = 0.1         # a method is "cached on some chains" when more than this share of chains disagree
+_ok = lambda i, lo, hi: i["kind"] == "ok" and lo <= i["s"] < hi
+TTL_BUCKETS = [         # (label, test on ttl_info) for the latest cache lifetime distribution
+    ("不缓存", lambda i: i["kind"] == "none"),
+    ("< 0.5 s", lambda i: _ok(i, 0, 0.5)),
+    ("0.5–1.5 s", lambda i: _ok(i, 0.5, 1.5)),
+    ("1.5–2.5 s", lambda i: _ok(i, 1.5, 2.5)),
+    ("≥ 2.5 s", lambda i: _ok(i, 2.5, float("inf")) or (i["kind"] == "min" and i["min"] >= 2.5)),
+    ("测不出", lambda i: i["kind"] in ("unknown", "skip") or (i["kind"] == "min" and i["min"] < 2.5)),
+]
 LEVEL_RANK = {"crit": 0, "warn": 1, "info": 2}
 REGULAR = ("simple", "complex")
 
@@ -98,7 +109,28 @@ def head_back(track):
     best = [max(bs[:i + 1]) for i in range(len(bs))]
     rate = (best[-1] - best[0]) / (ts[-1] - ts[0]) if ts[-1] > ts[0] and best[-1] > best[0] else None
     return {"n_back": n_back, "max_back": max_back, "n": len(bs), "heads": bs,
-            "sec_back": round(max_back / rate, 1) if (rate and max_back) else None}
+            "sec_back": round(max_back / rate, 1) if (rate and max_back) else None,
+            "block_s": round(1 / rate, 2) if rate else None}
+
+
+def method_cache(cache):
+    """latency_cache test 3 -> {method: {label, cached, first, rep, ...}} (None for older runs / skipped chains)."""
+    if not cache.get("methods"):
+        return None
+    return {mid: {"label": m["label"], "cached": m["cached"], "first": ms(m["first"]), "rep": ms(m["rep_med"]),
+                  "ok": m["ok"], "total": m["total"], "kind": m["kind"], "err": m["error"]}
+            for mid, m in cache["methods"].items()}
+
+
+def latest_ttl(cache):
+    """latency_cache test 4 -> lifetime summary (None for older runs / skipped chains)."""
+    t = cache.get("ttl")
+    if not t:
+        return None
+    return {"s": None if t["ttl"] is None else round(t["ttl"], 2), "min": t["ttl_min"], "none": t["all_miss"],
+            "gaps": t["gaps"], "poll": t["poll"], "window": t["window"],
+            "n": t["n"], "n_miss": t["n_miss"], "n_err": t["n_err"],
+            "err": t.get("error"), "kind": classify_error(t.get("error"))}
 
 
 def main():
@@ -189,8 +221,11 @@ def main():
                 "latest": {"cold": ms(cl["cold"]), "warm": ms(cl["warm_med"]), "ok": cl["ok"],
                            "total": cl.get("total", cl["reps"]), "reps": cl["reps"],
                            "err": cl.get("cold_error") or next((x["error"] for x in cl.get("calls", []) if x["error"]), None)},
+                # which methods are cached / how long a latest answer stays cached; skip = why not tested
+                "methods": method_cache(cache[cid]), "ttl": latest_ttl(cache[cid]), "skip": cache[cid].get("skip"),
             },
         }
+        c["block_s"] = c["head_back"]["block_s"] if c["head_back"] else None
         c["issues"] = chain_issues(c)
         c["level"] = min((LEVEL_RANK[i["level"]] for i in c["issues"]), default=None)
         chains.append(c)
@@ -234,6 +269,10 @@ def run_summary(embed, chains, bench):
                 "avail_advanced": m["avail_advanced"], "avail_history": m["avail_history"],
                 "hot_p50": m["hot_p50"], "cold_p50": cs["cold_p50"], "warm_p50": cs["warm_p50"],
                 "speedup_med": cs["speedup_med"], "n_issue": len(embed["issue_rows"]),
+                # None for runs from before latency_cache checked methods / the latest cache lifetime
+                "ttl_p50": embed["cache_ttl"]["p50"] if embed["cache_ttl"] else None,
+                "n_uncached": sum(1 for x in embed["cache_methods"] if x["verdict"] == "uncached")
+                if embed["cache_methods"] else None,
                 "n_crit": sum(1 for r in embed["issue_rows"] if r["issues"][0]["level"] == "crit"),
                 # None for runs from before rpc_bench tracked eth_blockNumber answers
                 "n_head_back": sum(1 for c in chains if c["head_back"] and c["head_back"]["n_back"])
@@ -393,6 +432,76 @@ def chain_issues(c):
     return out
 
 
+def build_cache_methods(chains):
+    """Per method of latency_cache test 3: on how many chains it is cached, and the chains that differ."""
+    tested = [c for c in chains if c["cache"]["methods"]]
+    mids = list(dict.fromkeys(mid for c in tested for mid in c["cache"]["methods"]))
+    out = []
+    for mid in mids:
+        rows = [(c, c["cache"]["methods"][mid]) for c in tested if mid in c["cache"]["methods"]]
+        n_c = sum(1 for _, m in rows if m["cached"])
+        n_u = sum(1 for _, m in rows if m["cached"] is False)
+        major = n_c >= n_u
+        # the majority's verdict unless more than ODD_SHARE of the chains disagree
+        verdict = ("unknown" if not (n_c or n_u) else "mixed" if min(n_c, n_u) > ODD_SHARE * (n_c + n_u)
+                   else "cached" if major else "uncached")
+        out.append({
+            "id": mid, "label": rows[0][1]["label"], "verdict": verdict,
+            "calls": max(m["total"] for _, m in rows),
+            "n_cached": n_c, "n_uncached": n_u, "n_unknown": len(rows) - n_c - n_u,
+            "first_p50": pct([m["first"] for _, m in rows if m["first"] is not None], 50),
+            "rep_p50": pct([m["rep"] for _, m in rows if m["rep"] is not None], 50),
+            # chains on the minority side, and chains where the test failed
+            "odd": [{"chainId": c["chainId"], "name": c["name"], "first": m["first"], "rep": m["rep"]}
+                    for c, m in rows if m["cached"] is not None and m["cached"] != major],
+            "unknown": [{"chainId": c["chainId"], "name": c["name"], "kind": m["kind"] or "other", "msg": m["err"],
+                         "ok": m["ok"], "total": m["total"]} for c, m in rows if m["cached"] is None],
+        })
+    return out
+
+
+def ttl_kind(t):
+    if t is None:
+        return None
+    return "none" if t["none"] else "ok" if t["s"] is not None else "min" if t["min"] is not None else "unknown"
+
+
+def ttl_sort(t):
+    """Sort key of a chain's latest cache lifetime: not cached = 0, a lower bound counts as its value."""
+    k = ttl_kind(t)
+    return 0 if k == "none" else t["s"] if k == "ok" else t["min"] if k == "min" else None
+
+
+def ttl_info(c):
+    t, skip = c["cache"]["ttl"], c["cache"]["skip"]
+    if t is None:
+        return {"kind": "skip", "reason": skip} if skip else None
+    return {"kind": ttl_kind(t), "s": t["s"], "min": t["min"], "gaps": t["gaps"], "poll": t["poll"],
+            "n": t["n"], "n_miss": t["n_miss"], "n_err": t["n_err"], "block_s": c["block_s"],
+            "err": t["err"], "ekind": t["kind"]}
+
+
+def build_cache_ttl(chains):
+    """Distribution of the latest cache lifetime (latency_cache test 4); None for older runs."""
+    infos = [(c, ttl_info(c)) for c in chains]
+    if not any(i and i["kind"] != "skip" for _, i in infos):
+        return None
+    t0 = next(c["cache"]["ttl"] for c in chains if c["cache"]["ttl"])
+    buckets = []
+    for label, test in TTL_BUCKETS:
+        rows = [c for c, i in infos if i and test(i)]
+        buckets.append({"label": label, "chains": [{"chainId": c["chainId"], "name": c["name"],
+                                                    "ttl": ttl_sort(c["cache"]["ttl"])} for c in rows]})
+    vals = [i["s"] for _, i in infos if i and i["kind"] == "ok"]
+    # chains where latest answers are barely cached, or where the lifetime could not be measured
+    short = [dict(i, chainId=c["chainId"], name=c["name"], tier=c["tier"], ttl=ttl_sort(c["cache"]["ttl"]))
+             for c, i in infos if i and (i["kind"] in ("none", "unknown", "skip")
+                                         or (i["kind"] == "ok" and i["s"] < SHORT_TTL_S))]
+    short.sort(key=lambda r: (r["ttl"] is None, r["ttl"] or 0, r["chainId"]))
+    return {"p50": pct(vals, 50), "n": len(vals), "poll": t0["poll"], "window": t0["window"],
+            "short_s": SHORT_TTL_S, "buckets": buckets, "short": short}
+
+
 def build_embed(chains, bench, lc, overview):
     bmeta = bench.get("meta", {})
 
@@ -494,6 +603,8 @@ def build_embed(chains, bench, lc, overview):
                    "retry_ms": c["cache"]["retry_ms"], "ok": c["cache"]["ok"], "reps": c["cache"]["reps"],
                    "n_fail": c["cache"]["n_blocks"] - c["cache"]["cold_ok"], "n_blocks": c["cache"]["n_blocks"]}
                   for c in chains if c["cache"]["cold_ok"] < c["cache"]["n_blocks"]]
+    cache_methods = build_cache_methods(chains)
+    cache_ttl = build_cache_ttl(chains)
 
     # ---- jitter ----
     jit = [c for c in chains if c["lat"].get("eth_blockNumber", {}).get("jitter") is not None]
@@ -548,6 +659,8 @@ def build_embed(chains, bench, lc, overview):
         "cache_summary": cache_summary,
         "cache_top": cache_top,
         "cache_fail": cache_fail,
+        "cache_methods": cache_methods,
+        "cache_ttl": cache_ttl,
         "jitter_top": jitter_top,
         "head_back": head_back_rows,
         "issue_rows": issue_rows,
@@ -567,6 +680,7 @@ def build_embed(chains, bench, lc, overview):
                 "kind": c["cache"]["cold_kind"] or "other", "msg": c["cache"]["cold_err"],
                 "ms": c["cache"]["cold_fail_ms"], "retry_call": c["cache"]["retry_call"],
                 "retry_ms": c["cache"]["retry_ms"]},
+            "ttl": ttl_sort(c["cache"]["ttl"]), "ttlf": ttl_info(c),
             "hfail": [{"label": method_label(mid), "ok": m["ok"], "total": m["total"],
                        "kind": m["kind"], "msg": m["err"]}
                       for mid, m in c["methods"].items() if m["group"] == "history" and m["ok"] < m["total"]],
