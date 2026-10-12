@@ -2,7 +2,9 @@
 
 多链 RPC 路由器的**分类、可用性(含历史区块)、失败原因、延迟与缓存**压测工具集。针对 [rpc.cryptostack.ai](https://rpc.cryptostack.ai/) 这类统一转发入口(`POST /rpc/{chainId}`)的聚合路由器,批量评估它服务的每条链的健康度。
 
-纯 Python 标准库实现(`urllib` + `concurrent.futures`),**零第三方依赖**。
+纯 Python 标准库实现(`http.client` + `concurrent.futures`),**零第三方依赖**。
+
+**连接复用**:每个工作线程和路由器保持一条 keep-alive HTTPS 连接，所有请求复用它;TCP+TLS 握手在计时开始前完成，所以延迟只算"发请求 → 读完响应"。服务端关掉空闲连接时自动重连并重发一次。脚本结束时会打印 `N requests over M connections`,M 远小于 N 说明复用生效。(2026-10-12 之前的结果每次请求都新建连接，延迟里含约 20ms 握手。)
 
 ## 能做什么
 
@@ -40,12 +42,12 @@ curl -s "https://rpc.cryptostack.ai/api/public/overview"         -o overview.jso
 python3 classify_chains.py                # -> chains_classified.csv
 
 # 3) 可用性(常规 + 历史区块)+ 延迟
-python3 rpc_bench.py --chains all --methods all --samples 3
-python3 rpc_bench.py --chains all --methods history --samples 3      # 只测历史区块
+python3 rpc_bench.py --chains all --methods all --samples 10 --interval 0.5
+python3 rpc_bench.py --chains all --methods history --samples 10     # 只测历史区块
 python3 rpc_bench.py --chains 1,56,8453 --methods complex            # 指定 chainId
 
 # 4) 稳定延迟 + 缓存冷/热
-python3 latency_cache.py --chains all --samples 12 --cache-reps 5
+python3 latency_cache.py --chains all --samples 12 --cache-blocks 10 --cache-reps 10
 
 # 5) 生成报告(自动取最新的 results_raw_* 和 results_latcache_raw_*)
 python3 build_report.py
@@ -57,12 +59,27 @@ python3 build_report.py
 |------|------|------|
 | `--chains` | `all` / `traffic` / `majors` / 逗号分隔的 chainId | `traffic` |
 | `--methods` | `simple` / `complex` / `history` / `all` | `all` |
-| `--samples` | 每个(链,方法)采样次数 | `3` |
-| `--concurrency` | 并行测试的链数 | `16` |
+| `--samples` | 每个(链,方法)采样次数 | `10` |
+| `--concurrency` | 并行测试的链数 | `32` |
+| `--interval` | 同一条链两次请求之间的最小间隔(秒),0 = 不限速 | `0.5` |
 | `--timeout` | 单次请求超时(秒) | `15` |
 | `--seed` | 历史区块随机选取的种子(0 = 按时间) | `0` |
 
+同一条链的请求**按轮穿插**发送(每轮把所有方法各发 1 次)并按 `--interval` 限速。不限速时，一条链几秒内会有几十个不走缓存的请求打到上游，触发上游限流，路由器随后报"上游节点耗尽",测试结果被自己污染(实测 10 次采样不限速时，历史区块的"节点耗尽"失败从 0.3% 涨到 2.7%)。
+
 输出:`results_raw_*.json`(逐方法聚合 + 全部错误原文及分类)、`results_summary_*.csv`(逐链逐方法,含 `error_kind` / `sample_error`)。
+
+### `latency_cache.py` 参数
+
+| 参数 | 说明 | 默认 |
+|------|------|------|
+| `--chains` | 同上 | `traffic` |
+| `--samples` | 延迟测试：每个方法连续请求次数 | `12` |
+| `--rounds` / `--gap` | 延迟测试重复轮数 / 轮间隔(秒) | `1` / `15` |
+| `--cache-blocks` | 缓存测试：每条链随机取几个区块(= 冷回源样本数) | `10` |
+| `--cache-reps` | 缓存测试：每个区块冷请求之后再连发几次(热) | `10` |
+| `--interval` | 同一条链两次冷回源请求之间的最小间隔(秒) | `0.5` |
+| `--concurrency` / `--timeout` | 并行链数 / 单次超时 | `12` / `15` |
 
 ### `build_report.py` 参数
 
@@ -99,7 +116,9 @@ python3 build_report.py
 
 ## 缓存冷/热的测法
 
-路由器没有显式的缓存命中响应头,因此用延迟推断:每条链以实时块高为基准取一个**随机近期区块**(最新块往前 200–800 块:极可能未被缓存,又在只保留最近 ~1024 块的普通节点范围内,避免把"上游没有老区块"误当成缓存测试失败;老区块的可用性由历史区块测试负责),对 `eth_getBlockByNumber(block,false)` 连打 K+1 次:第 1 次为**冷回源**,之后成功的请求取中位数为**缓存命中**,**加速 = 冷回源 ÷ 缓存命中**。第 1 次失败时记录失败原因、耗时,以及第几次才成功(说明路由器没有自动换上游重试)。同时对 `latest` 标签做对照。
+路由器没有显式的缓存命中响应头,因此用延迟推断:每条链以实时块高为基准取 N 个(`--cache-blocks`,默认 10)**随机近期区块**(最新块往前 200–800 块:极可能未被缓存,又在只保留最近 ~1024 块的普通节点范围内,避免把"上游没有老区块"误当成缓存测试失败;老区块的可用性由历史区块测试负责),每个区块对 `eth_getBlockByNumber(block,false)` 连打 K+1 次:第 1 次为**冷回源**,之后的为**缓存命中**。**冷回源 = 各区块第 1 次耗时的中位数**,**缓存命中 = 其余成功请求的中位数**,**加速 = 冷回源 ÷ 缓存命中**。冷回源请求之间按 `--interval` 限速。某个区块第 1 次失败时记录失败原因、耗时,以及第几次才成功(说明路由器没有自动换上游重试),该区块不计入冷回源中位数。同时对 `latest` 标签做对照。
+
+(2026-10-12 之前每条链只测 1 个区块，冷回源只有 1 个样本，容易被单次波动带偏。)
 
 ## 问题判定(报告 02 节)
 
@@ -110,7 +129,7 @@ python3 build_report.py
 | 严重 | 历史区块查不到(近期) | 连最近 16–128 块都查不到 |
 | 警告 | 历史区块查不到 / 偶发失败 | 中期或早期区块全部 / 部分失败 |
 | 警告 | 常规请求失败 | 常规方法有任意一次失败 |
-| 警告 | 首次请求失败 / 缓存测试全部失败 | 缓存测试第 1 次失败 / 全部失败 |
+| 警告 | 首次请求失败 / 缓存区块全部失败 | 缓存测试某个区块第 1 次失败 / 该区块全部失败 |
 | 警告 | 上游慢 | 冷回源 ≥ 1000 ms |
 | 提示 | 延迟抖动大 / 单点 | `eth_blockNumber` 标准差 ≥ 200 ms / 仅 1 个活跃节点 |
 

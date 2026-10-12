@@ -141,16 +141,24 @@ def main():
                           "jitter": ms(v["stdev"]), "err": v["err"], "kind": classify_error(v["err"])}
                     for mid, v in lm.items()},
             "cache": {
-                "block": cache[cid]["block"],
+                # block = the first block whose cold call failed, else the first block probed
+                "block": cache[cid]["block"], "blocks": cache[cid].get("blocks", [cache[cid]["block"]]),
                 "cold": ms(cf["cold"]), "warm": ms(cf["warm_med"]), "warm_min": ms(cf["warm_min"]),
                 "speedup": round(speed, 1) if speed else None,
-                "ok": cf["ok"], "reps": cf["reps"],
+                # older latency_cache.py runs probed a single block
+                "n_blocks": cf.get("n_blocks", 1),
+                "cold_ok": cf.get("cold_ok", int(cf["cold"] is not None)),
+                "cold_all": [ms(x) for x in cf.get("cold_all", [cf["cold"]])],
+                "ok": cf["ok"], "total": cf.get("total", cf["reps"]), "reps": cf["reps"],
                 "cold_kind": classify_error(cf.get("cold_error")), "cold_err": cf.get("cold_error"),
                 "cold_fail_ms": ms(cf.get("cold_fail_latency")),
                 "retry_call": cf.get("retry_ok_call"), "retry_ms": ms(cf.get("retry_ok_latency")),
-                "calls": [{"ok": x["ok"], "ms": ms(x["latency"]), "kind": classify_error(x["error"]), "err": x["error"]}
-                          for x in cf.get("calls", [])],
-                "latest": {"cold": ms(cl["cold"]), "warm": ms(cl["warm_med"]), "ok": cl["ok"], "reps": cl["reps"],
+                "probes": [{"block": p["block"], "calls": [
+                    {"ok": x["ok"], "ms": ms(x["latency"]), "kind": classify_error(x["error"]), "err": x["error"]}
+                    for x in p["calls"]]}
+                    for p in cf.get("probes", [{"block": cache[cid]["block"], "calls": cf.get("calls", [])}])],
+                "latest": {"cold": ms(cl["cold"]), "warm": ms(cl["warm_med"]), "ok": cl["ok"],
+                           "total": cl.get("total", cl["reps"]), "reps": cl["reps"],
                            "err": cl.get("cold_error") or next((x["error"] for x in cl.get("calls", []) if x["error"]), None)},
             },
         }
@@ -195,7 +203,7 @@ def chain_issues(c):
          next((m["err"] for m in reg if m["err"]), None)),
         ("延迟测试", sum(v["ok"] for v in lm.values()), sum(v["total"] for v in lm.values()),
          next((v["err"] for v in lm.values() if v["err"]), None)),
-        ("缓存测试", ca["ok"] + ca["latest"]["ok"], ca["reps"] + ca["latest"]["reps"],
+        ("缓存测试", ca["ok"] + ca["latest"]["ok"], ca["total"] + ca["latest"]["total"],
          ca["cold_err"] or ca["latest"]["err"]),
     ]
     dead = [p for p in phases if p[2] and p[1] == 0]
@@ -230,15 +238,18 @@ def chain_issues(c):
             add("history_flaky", "warn", "历史区块偶发失败", fmt_fails(
                 [(method_label(mid), m["ok"], m["total"], m["kind"], m["err"]) for mid, m in some]))
 
-    # 5) cache probe: first (cold) call failed
-    if ca["cold"] is None and "缓存测试" not in dead_names:
+    # 5) cache probe: the first (cold) call failed on some block(s); the cold_* fields describe the first one
+    n_fail = ca["n_blocks"] - ca["cold_ok"]
+    if n_fail and "缓存测试" not in dead_names:
+        where = "缓存测试 %d 个区块中有 %d 个" % (ca["n_blocks"], n_fail) if ca["n_blocks"] > 1 else "缓存测试"
         if ca["retry_call"]:
-            add("cold_fail", "warn", "首次请求失败", "缓存测试第 1 次请求失败(%s，耗时 %s ms：%s)，第 %d 次才成功(%s ms)"
+            add("cold_fail", "warn", "首次请求失败", "%s第 1 次请求失败(如区块 #%s:%s，耗时 %s ms：%s)，第 %d 次才成功(%s ms)"
                 "——路由器遇到这个错误没有自动换上游重试" % (
-                    kind_label(ca["cold_kind"]), ca["cold_fail_ms"], ca["cold_err"], ca["retry_call"], ca["retry_ms"]))
+                    where, ca["block"], kind_label(ca["cold_kind"]), ca["cold_fail_ms"], ca["cold_err"],
+                    ca["retry_call"], ca["retry_ms"]))
         else:
-            add("cache_all_fail", "warn", "缓存测试全部失败", "区块 #%s 连续 %d 次请求全部失败(%s：%s)" % (
-                ca["block"], ca["reps"], kind_label(ca["cold_kind"]), ca["cold_err"]))
+            add("cache_all_fail", "warn", "缓存区块全部失败", "%s第 1 次请求失败;区块 #%s 连续 %d 次请求全部失败(%s：%s)" % (
+                where, ca["block"], ca["reps"], kind_label(ca["cold_kind"]), ca["cold_err"]))
 
     # 6) slow upstream, jitter, single point
     if ca["cold"] is not None and ca["cold"] >= SLOW_COLD_MS:
@@ -338,8 +349,11 @@ def build_embed(chains, bench, lc, overview):
         "speedup_med": round(statistics.median(speeds), 1) if speeds else None,
         "benefit": sum(1 for s in speeds if s >= BENEFIT_X), "benefit_x": BENEFIT_X,
         "n": len(with_speed), "n_total": len(chains),
-        "n_cold_fail": sum(1 for c in chains if c["cache"]["cold"] is None),
-        "reps": max((c["cache"]["reps"] for c in chains), default=0),
+        # chains where at least one block's cold call failed / where every one did (no cold latency)
+        "n_cold_fail": sum(1 for c in chains if c["cache"]["cold_ok"] < c["cache"]["n_blocks"]),
+        "n_cold_none": sum(1 for c in chains if c["cache"]["cold"] is None),
+        "reps": max((c["cache"]["reps"] for c in chains), default=0),   # calls per block
+        "blocks": max((c["cache"]["n_blocks"] for c in chains), default=0),
     }
     cache_top = [{"chainId": c["chainId"], "name": c["name"], "cold": c["cache"]["cold"],
                   "warm": c["cache"]["warm"], "speedup": c["cache"]["speedup"]}
@@ -347,8 +361,9 @@ def build_embed(chains, bench, lc, overview):
     cache_fail = [{"chainId": c["chainId"], "name": c["name"], "block": c["cache"]["block"],
                    "kind": c["cache"]["cold_kind"] or "other", "msg": c["cache"]["cold_err"],
                    "fail_ms": c["cache"]["cold_fail_ms"], "retry_call": c["cache"]["retry_call"],
-                   "retry_ms": c["cache"]["retry_ms"], "ok": c["cache"]["ok"], "reps": c["cache"]["reps"]}
-                  for c in chains if c["cache"]["cold"] is None]
+                   "retry_ms": c["cache"]["retry_ms"], "ok": c["cache"]["ok"], "reps": c["cache"]["reps"],
+                   "n_fail": c["cache"]["n_blocks"] - c["cache"]["cold_ok"], "n_blocks": c["cache"]["n_blocks"]}
+                  for c in chains if c["cache"]["cold_ok"] < c["cache"]["n_blocks"]]
 
     # ---- jitter ----
     jit = [c for c in chains if c["lat"].get("eth_blockNumber", {}).get("jitter") is not None]
@@ -376,6 +391,7 @@ def build_embed(chains, bench, lc, overview):
             "catalog": overview.get("chains", {}).get("catalog"),
             "endpoints_active": overview.get("endpoints", {}).get("active"),
             "bench_calls": reg_tot + h_tot, "bench_samples": bmeta.get("samples"),
+            "bench_interval": bmeta.get("interval"),
             "latcache_calls": sum(c["lat"][m]["total"] for c in chains for m in lat_mids)
                               + sum(c["cache"]["reps"] + c["cache"]["latest"]["reps"] for c in chains),
             "lat_samples": lat_samples,
