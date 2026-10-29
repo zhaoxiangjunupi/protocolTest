@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>三链业务适配测试</title>
+<meta name="description" content="cryptostack RPC 路由器按真实业务用法测试 BSC、Polygon(Polymarket)、Ethereum 三条链的结果与建议">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+  /* Same design system as report_template.html: editorial column of cards, mono kickers, system-sans body */
+  :root{
+    color-scheme: light;
+    --bg:#f4f3ef; --surface:#ffffff; --surface-2:#f6f5f1; --raise:#fbfbf9;
+    --fg:#0b0b0b; --fg-2:#52514e; --muted:#898781;
+    --grid:#e4e3dc; --border:rgba(11,11,11,.11); --border-strong:rgba(11,11,11,.18);
+    --accent:#2a78d6; --series-grey:#a9a79f; --series-grey-2:#cfcdc5;
+    --good:#0ca30c; --warn:#d98b00; --crit:#d03b3b;
+    --good-ink:#0a7a0a; --warn-ink:#a06500; --crit-ink:#c0302f;
+    --shadow:0 1px 2px rgba(11,11,11,.05),0 1px 0 rgba(11,11,11,.03);
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  }
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#0c0c0c; --surface:#191918; --surface-2:#211f1e; --raise:#201e1d;
+    --fg:#f0efec; --fg-2:#c3c2b7; --muted:#8f8d86;
+    --grid:#2c2c2a; --border:rgba(255,255,255,.11); --border-strong:rgba(255,255,255,.2);
+    --accent:#3987e5; --series-grey:#77756f; --series-grey-2:#4c4b47;
+    --good:#0ca30c; --warn:#fab219; --crit:#e05a5a;
+    --good-ink:#2fb82f; --warn-ink:#f0b53a; --crit-ink:#e86a6a;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }}
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --bg:#0c0c0c; --surface:#191918; --surface-2:#211f1e; --raise:#201e1d;
+    --fg:#f0efec; --fg-2:#c3c2b7; --muted:#8f8d86;
+    --grid:#2c2c2a; --border:rgba(255,255,255,.11); --border-strong:rgba(255,255,255,.2);
+    --accent:#3987e5; --series-grey:#77756f; --series-grey-2:#4c4b47;
+    --good:#0ca30c; --warn:#fab219; --crit:#e05a5a;
+    --good-ink:#2fb82f; --warn-ink:#f0b53a; --crit-ink:#e86a6a;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1100px;margin:0 auto;padding-inline:20px;padding-block:0 72px;}
+  code{font-family:var(--mono);font-size:.9em;background:var(--surface-2);padding:1px 6px;border-radius:4px;border:1px solid var(--border);word-break:break-word}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+
+  header.mast{padding-block:40px 24px;border-bottom:1px solid var(--border-strong);margin-bottom:28px;}
+  .kick{font-family:var(--mono);font-weight:500;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);}
+  h1{font-family:var(--mono);font-weight:700;font-size:clamp(26px,5vw,38px);line-height:1.1;margin:.3em 0 .4em;text-wrap:balance;letter-spacing:-.01em;}
+  .sub{color:var(--fg-2);font-size:15px;max-width:76ch;margin:0}
+  .sub b{color:var(--fg)}
+  .metaline{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:16px;font-family:var(--mono);font-size:12.5px;color:var(--fg-2);}
+  .metaline b{color:var(--fg);font-weight:700}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:34px;}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:16px 16px 14px;box-shadow:var(--shadow);min-width:0;}
+  .kpi .lab{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--muted);}
+  .kpi .val{font-size:clamp(26px,4vw,34px);font-weight:700;line-height:1.05;margin-top:7px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .kpi .val small{font-size:.5em;font-weight:600;color:var(--fg-2);margin-left:3px}
+  .kpi .note{font-size:12px;color:var(--fg-2);margin-top:5px}
+  .kpi.good .val{color:var(--good-ink)} .kpi.warn .val{color:var(--warn-ink)} .kpi.crit .val{color:var(--crit-ink)}
+
+  section{margin-bottom:40px;}
+  .sechead{display:flex;align-items:baseline;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+  h2{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--accent);margin:0;}
+  h3.sm{font-family:var(--mono);font-size:12.5px;font-weight:700;margin:22px 0 8px;color:var(--fg)}
+  .secsub{color:var(--fg-2);font-size:14px;margin:2px 0 16px;max-width:80ch}
+  .secsub b{color:var(--fg)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:20px 22px;box-shadow:var(--shadow);}
+  .card + .card,.card + .tablewrap,.tablewrap + .card,.tablewrap + .tablewrap{margin-top:14px}
+
+  /* verdict cards */
+  .verdicts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .vcard{border:1px solid var(--border);border-radius:10px;padding:15px 17px;background:var(--surface);box-shadow:var(--shadow);border-top:3px solid var(--muted)}
+  .vcard.ok{border-top-color:var(--good)} .vcard.part{border-top-color:var(--warn)} .vcard.bad{border-top-color:var(--crit)}
+  .vcard .cn{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .vcard .vv{font-size:19px;font-weight:700;margin:4px 0 6px}
+  .vcard.ok .vv{color:var(--good-ink)} .vcard.part .vv{color:var(--warn-ink)} .vcard.bad .vv{color:var(--crit-ink)}
+  .vcard p{margin:0;font-size:13px;color:var(--fg-2)}
+
+  /* tables */
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{padding:9px 12px;text-align:left;vertical-align:top}
+  thead th{font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--fg-2);border-bottom:1px solid var(--border-strong);background:var(--surface);font-weight:700;white-space:nowrap;vertical-align:bottom}
+  tbody tr{border-top:1px solid var(--grid)}
+  tbody tr:hover{background:var(--surface-2)}
+  td.k{font-weight:600;white-space:nowrap;color:var(--fg)}
+  td{color:var(--fg-2)}
+  td .err{font-family:var(--mono);font-size:11.5px;color:var(--muted);word-break:break-word}
+  td.mono{font-family:var(--mono);font-size:12px;word-break:break-all}
+  .badge{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:5px;letter-spacing:.02em;line-height:1.6;white-space:nowrap;margin-right:6px}
+  .badge.fail{background:color-mix(in srgb,var(--crit) 16%,transparent);color:var(--crit-ink);border:1px solid color-mix(in srgb,var(--crit) 35%,transparent)}
+  .badge.part{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn-ink);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
+  .badge.ok{background:color-mix(in srgb,var(--good) 12%,transparent);color:var(--good-ink);border:1px solid color-mix(in srgb,var(--good) 28%,transparent)}
+  .cellnote{font-size:12px;color:var(--fg-2)}
+  .legend-inline{display:flex;gap:8px 18px;flex-wrap:wrap;font-size:12.5px;color:var(--fg-2);margin:0 0 12px}
+
+  /* lists */
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .lst{margin:0;padding-left:20px;font-size:13.5px;color:var(--fg-2)}
+  .lst li{margin:5px 0} .lst li b{color:var(--fg)}
+  .cardh{font-family:var(--mono);font-size:12px;font-weight:700;margin:0 0 8px}
+  .cardh.good{color:var(--good-ink)} .cardh.bad{color:var(--crit-ink)} .cardh.warn{color:var(--warn-ink)}
+  .mlist{display:grid;gap:10px}
+  .mlist .mi{display:grid;grid-template-columns:150px 1fr;gap:14px;font-size:13.5px;align-items:baseline}
+  .mlist .mi .k{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700}
+  .mlist .mi .v{color:var(--fg-2)}
+  .checks{list-style:none;padding:0;margin:0;font-size:13.5px;color:var(--fg-2)}
+  .checks li{padding:7px 0 7px 26px;position:relative;border-top:1px dashed var(--grid)}
+  .checks li:first-child{border-top:0}
+  .checks li::before{content:"";position:absolute;left:2px;top:11px;width:12px;height:12px;border:1.5px solid var(--border-strong);border-radius:3px}
+  pre{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.6;color:var(--fg);margin:0 0 14px}
+
+  /* chart */
+  .chart svg{display:block;width:100%;height:auto}
+  .chart .ttl{font-size:15px;font-weight:700;margin:0}
+  .chart .cap{font-size:12.5px;color:var(--fg-2);margin:3px 0 10px}
+  .chart .src{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px}
+  .chart text{font-family:var(--sans)}
+
+  #tip{position:fixed;pointer-events:none;z-index:50;background:var(--fg);color:var(--bg);font-size:12px;padding:7px 10px;border-radius:7px;opacity:0;transition:opacity .08s;max-width:300px;box-shadow:0 4px 14px rgba(0,0,0,.25);line-height:1.5}
+
+  footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--border);font-size:12.5px;color:var(--muted);font-family:var(--mono);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+
+  @media (max-width:760px){
+    .wrap{padding-inline:16px}
+    .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .verdicts,.two{grid-template-columns:1fr}
+    .mlist .mi{grid-template-columns:1fr;gap:2px}
+    .card{padding:16px 15px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div class="kick">业务适配测试 · BSC · Polygon · Ethereum</div>
+    <h1>RPC 路由器三链业务适配测试报告</h1>
+    <p class="sub">三条链都能支撑<b>最新状态查询、窄过滤的实时日志和单条并发请求</b>；都不能原样支撑“500 块 getLogs、几十到一百条 batch、5 万块回溯”的写法。归档方面以太坊最好，<b>BSC 最差，BSC 的历史数据需要另配归档节点</b>。</p>
+    <div class="metaline">
+      <span>测试时间 <b>2026-10-29 07:00–09:11 UTC</b></span>
+      <span>入口 <b>rpc.cryptostack.ai/rpc/{chainId}</b></span>
+      <span>请求量 <b>三条链共约 5,000 次</b></span>
+      <span>脚本 <b>bsc_use_check.py · polygon_polymarket_check.py</b></span>
+    </div>
+  </header>
+
+  <div class="kpis">
+    <div class="kpi good"><div class="lab">实时监控可直接接入</div><div class="val">3<small>/ 3 条链</small></div><div class="note">最新状态、窄过滤日志、单条并发都稳定</div></div>
+    <div class="kpi crit"><div class="lab">BSC 历史 eth_call 最低成功率</div><div class="val">0<small>%</small></div><div class="note">2026-08-09 的高度连续 8 次全部失败</div></div>
+    <div class="kpi crit"><div class="lab">热门代币 500 块 getLogs</div><div class="val">0<small>%</small></div><div class="note">三条链都超过 20,000 条结果上限</div></div>
+    <div class="kpi crit"><div class="lab">6 线程并发 batch 成功率</div><div class="val">≤5<small>%</small></div><div class="note">Polygon、以太坊 150 批各只成功 7 批</div></div>
+  </div>
+
+  <section>
+    <div class="sechead"><h2>00 · 结论</h2></div>
+    <p class="secsub">共性的根因在路由器：上游池里混有非归档或受限的公共节点，路由器把这些上游的错误直接返回，不换上游重试。</p>
+    <div class="verdicts">
+      <div class="vcard part"><div class="cn">Ethereum · chainId 1</div><div class="vv">改写法后基本满足</div><p>2026-04-01 以后的归档完整可查。问题集中在上游错误透传，以及热门代币的 getLogs 窗口要缩小。</p></div>
+      <div class="vcard part"><div class="cn">Polygon · chainId 137</div><div class="vv">改写法后基本满足</div><p>Polymarket 式索引可用：130 块的实时成交扫描 20/20，历史状态能查到 2024-04。全市场扫描的窗口要 ≤130 块。</p></div>
+      <div class="vcard bad"><div class="cn">BSC · chainId 56</div><div class="vv">不满足</div><p>历史请求经常落到非归档上游，个别高度 0/8，老区块的 null 还会被缓存。补数和对账要另配归档节点。</p></div>
+    </div>
+
+    <h3 class="sm">逐项能力对照</h3>
+    <div class="legend-inline"><span><span class="badge ok">可用</span>能直接用</span><span><span class="badge part">有条件</span>要改写法或加重试</span><span><span class="badge fail">不可用</span>按文档原写法做不了</span></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>场景</th><th>BSC</th><th>Polygon</th><th>Ethereum</th></tr></thead>
+        <tbody>
+          <tr><td class="k">常规方法</td><td><span class="badge ok">可用</span><span class="cellnote">全部成功</span></td><td><span class="badge ok">可用</span><span class="cellnote">全部成功</span></td><td><span class="badge ok">可用</span><span class="cellnote">全部成功</span></td></tr>
+          <tr><td class="k">最新状态 eth_call</td><td><span class="badge ok">可用</span><span class="cellnote">含 Multicall3 100 个、Safe</span></td><td><span class="badge ok">可用</span><span class="cellnote">含 ERC-1155 balanceOfBatch</span></td><td><span class="badge part">有条件</span><span class="cellnote">约 5% 被上游拒绝，需重试</span></td></tr>
+          <tr><td class="k">窄过滤实时 getLogs</td><td><span class="badge ok">可用</span><span class="cellnote">130 / 500 块 4/4</span></td><td><span class="badge ok">可用</span><span class="cellnote">2,000 块内 5/6～6/6</span></td><td><span class="badge ok">可用</span><span class="cellnote">130 / 500 / 2,000 块 4/4</span></td></tr>
+          <tr><td class="k">热门事件全量 getLogs · 130 块</td><td><span class="badge part">有条件</span><span class="cellnote">常态 15/16</span></td><td><span class="badge ok">可用</span><span class="cellnote">OrderFilled 20/20</span></td><td><span class="badge part">有条件</span><span class="cellnote">常态 13/14</span></td></tr>
+          <tr><td class="k">热门事件全量 getLogs · 500 块</td><td><span class="badge fail">不可用</span><span class="cellnote">超 20,000 条</span></td><td><span class="badge fail">不可用</span><span class="cellnote">超 20,000 条</span></td><td><span class="badge fail">不可用</span><span class="cellnote">超 20,000 条</span></td></tr>
+          <tr><td class="k">2026-04-01 以后的归档</td><td><span class="badge fail">不可用</span><span class="cellnote">个别高度 0/8，null 被缓存</span></td><td><span class="badge ok">可用</span><span class="cellnote">各高度 4/6～6/6</span></td><td><span class="badge ok">可用</span><span class="cellnote">各月 6/8～8/8</span></td></tr>
+          <tr><td class="k">单次 5 万块回溯</td><td><span class="badge fail">不可用</span><span class="cellnote">上限 5,000 块</span></td><td><span class="badge fail">不可用</span><span class="cellnote">上限 10,000 块</span></td><td><span class="badge fail">不可用</span><span class="cellnote">上限 5,000 块</span></td></tr>
+          <tr><td class="k">JSON-RPC batch · 串行</td><td><span class="badge part">有条件</span><span class="cellnote">≤40 条</span></td><td><span class="badge part">有条件</span><span class="cellnote">≤40 条</span></td><td><span class="badge part">有条件</span><span class="cellnote">eth_call ≤60 条</span></td></tr>
+          <tr><td class="k">JSON-RPC batch · 并发</td><td><span class="badge fail">不可用</span><span class="cellnote">90 批 0 成功</span></td><td><span class="badge fail">不可用</span><span class="cellnote">150 批成功 7</span></td><td><span class="badge fail">不可用</span><span class="cellnote">150 批成功 7</span></td></tr>
+          <tr><td class="k">单条并发 eth_call</td><td><span class="badge ok">可用</span><span class="cellnote">300/300，28 次/秒</span></td><td><span class="badge ok">可用</span><span class="cellnote">300/300，30 次/秒</span></td><td><span class="badge part">有条件</span><span class="cellnote">282/300，30 次/秒</span></td></tr>
+          <tr><td class="k">Multicall3 批量读余额</td><td><span class="badge ok">可用</span><span class="cellnote">一次 100 个</span></td><td><span class="badge ok">可用</span><span class="cellnote">一次 100 个</span></td><td><span class="badge ok">可用</span><span class="cellnote">3,000 个约 4 秒，27/30</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>01 · 测试对象与方法</h2></div>
+    <p class="secsub">每条链跑两到四轮、约 1,400～1,900 次请求。BSC 和以太坊按 <code>bsc_use.md</code> 的用法测，Polygon 按 Polymarket 索引的用法测。</p>
+    <div class="card">
+      <div class="mlist">
+        <div class="mi"><span class="k">BSC</span><span class="v">07:00–07:19 UTC。USDT Transfer、Multicall3、Safe 1.4.1，按 bsc_use.md 的方法、频率和 2026-04-01 起的归档要求。</span></div>
+        <div class="mi"><span class="k">Polygon</span><span class="v">08:17–08:40 UTC。两个交易所的 OrderFilled、ConditionalTokens 的 ERC-1155 持仓转移、抵押代币和 USDC.e 余额。</span></div>
+        <div class="mi"><span class="k">Ethereum</span><span class="v">08:50–09:11 UTC。和 BSC 同一套用法：USDT Transfer、Multicall3、Safe 1.4.1。</span></div>
+        <div class="mi"><span class="k">场景</span><span class="v">常规方法；最新状态 eth_call；实时 getLogs（40～2,000 块，全量和窄过滤）；归档（多个历史高度，每个高度重复 6～8 次）；2,000～50,000 块的大区间 getLogs；10～100 条的 batch；每秒约 1.5 次的常态流量；6 线程读 3,000 个余额的突发。</span></div>
+        <div class="mi"><span class="k">测法注意</span><span class="v">路由器会缓存同参数请求，所以 batch 和突发都用随机不重复地址。连续失败会触发整链熔断，所以突发放在每轮最后，下一轮前冷却 3～5 分钟。下文引用的错误都是原文。</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>02 · 历史块高 eth_call 成功率</h2></div>
+    <p class="secsub">以太坊和 Polygon 的历史查询只是零星失败，重试即可。BSC 的失败成片出现，同一高度连续 8 次全部失败，重试也救不回来。</p>
+    <div class="card chart">
+      <p class="ttl">BSC 在 2026-08-09 的高度跌到 0%，以太坊各月不低于 75%</p>
+      <p class="cap">每个点为同一历史高度连续请求 8 次（Polygon 6 次）的成功比例，悬停看详情。</p>
+      <svg id="archchart" viewBox="0 0 980 330" role="img" aria-label="历史块高 eth_call 成功率：BSC 在 2026-08-09 跌到 0%，以太坊各月不低于 75%"></svg>
+      <div class="src">来源：results_bsc_use2_*、results_polygon_polymarket_*、results_eth_use2_*（2026-10-29）</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>03 · BSC（chainId 56）</h2></div>
+    <p class="secsub"><b>BSC 不能满足 bsc_use.md。</b>2026-04-01 以后的归档时好时坏，老区块的 null 还会被缓存。最新状态和窄过滤的实时日志没有问题。</p>
+    <div class="card">
+      <p class="cardh good">能满足的部分</p>
+      <ul class="lst">
+        <li>常规方法全部成功，p50 3～90 ms，p95 在 0.8 s 以内。</li>
+        <li>最新状态 eth_call 全部成功：USDT balanceOf、Multicall3 一次 100 个、链上真实 Safe 的 getThreshold / getOwners。</li>
+        <li>窄过滤 getLogs（只看转入币安热钱包的 USDT）130 / 500 块 4/4，2,000 块 3/4。</li>
+        <li>常态流量下 130 块全量 USDT 扫描 16 次成功 15 次，eth_call 16/16。</li>
+        <li>6 线程并发单条 eth_call 300/300，约 28 次/秒。</li>
+      </ul>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>不能满足的部分</th><th>实测</th><th>对业务的影响</th></tr></thead>
+        <tbody>
+          <tr><td class="k">历史请求落到非归档上游</td><td>历史 eth_call 各高度 0/8～8/8，历史 500 块 getLogs 3/8～8/8</td><td>补数和按块高对账不可靠</td></tr>
+          <tr><td class="k">老区块的 null 被缓存</td><td>抽查 18 组“块高 × 参数”，9 组每次都是 null。块 9000 万的 null 持续 10 分钟以上，换 full 参数就能取到</td><td>一次坏结果持续污染，重试无效</td></tr>
+          <tr><td class="k">getLogs 结果上限 20,000 条</td><td>USDT 每 130 块约 1.2 万条 Transfer，500 块窗口常态下 16 次全部失败</td><td>文档里 100～500 块的窗口要缩小</td></tr>
+          <tr><td class="k">getLogs 范围上限 5,000 块</td><td>少结果查询 3,000 / 5,000 块 4/4，10,000 块 2/4，20,000 / 50,000 块各 1/4</td><td>文档里单次 5 万块的回溯做不了</td></tr>
+          <tr><td class="k">batch 上限</td><td>路由器硬限 100 条。串行 40 条以内稳定，50 条起时好时坏。6 线程并发 50 / 100 条一批全部失败</td><td>日报高峰一次几十到一百条的写法不行</td></tr>
+          <tr><td class="k">块高不一致</td><td>常态流量里 16 次各有 1 次“block range extends beyond current head block”和最新块返回 null</td><td>监控程序要对最新几个块容错</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>04 · Polygon / Polymarket（chainId 137）</h2></div>
+    <p class="secsub"><b>Polygon 入口按限制改写法后，可以支撑 Polymarket 式的索引。</b>Polymarket 2026 年已换到新交易所合约，旧的 0x4bFb… 和 0xC5d5… 在测试时的最近 60 块里没有任何事件。下表的地址和 topic 都取自 2026-10-29 的链上回执。</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>用途</th><th>合约地址</th><th>关注的事件</th><th>130 块内条数</th></tr></thead>
+        <tbody>
+          <tr><td class="k">交易所</td><td class="mono">0xe111180000d2663c0091e4f400237545b87b996b</td><td>OrderFilled（0xd543adfd…）</td><td rowspan="2">两个交易所合计约 7,700</td></tr>
+          <tr><td class="k">NegRisk 交易所</td><td class="mono">0xe2222d279d744050d28e00520010520000310f59</td><td>OrderFilled</td></tr>
+          <tr><td class="k">持仓（ConditionalTokens）</td><td class="mono">0x4D97DCd97eC945f40cF65F87097ACe5EA0476045</td><td>ERC-1155 TransferSingle / TransferBatch</td><td>约 14,000</td></tr>
+          <tr><td class="k">抵押代币</td><td class="mono">0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb</td><td>Transfer</td><td>约 14,000</td></tr>
+          <tr><td class="k">USDC.e</td><td class="mono">0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174</td><td>Transfer</td><td>约 8,900</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <p class="cardh good">能满足的部分</p>
+      <ul class="lst">
+        <li>常规方法和最新状态 eth_call 全部成功：ERC-1155 balanceOf、balanceOfBatch 一次 50 组、Multicall3 一次 100 个余额，p95 在 0.5 s 以内。</li>
+        <li>实时成交扫描：两个交易所的 OrderFilled 130 块窗口连测 20 次全部成功，p50 2.1 s，p95 4.2 s。</li>
+        <li>历史状态和回执：从 head-500 到 head-4000 万（2024-04-29），各高度 4/6～6/6，大多是 6/6。没有 BSC 的 null 缓存问题。</li>
+        <li>窄过滤 getLogs（只看某个持仓地址或某个 maker）在 2,000 块以内 5/6～6/6，10,000 块 3/6～6/6。</li>
+        <li>常态流量下 OrderFilled、eth_call、区块查询全部成功。6 线程并发单条 eth_call 300/300，约 30 次/秒。</li>
+      </ul>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>要按限制改写法的部分</th><th>实测</th><th>写法</th></tr></thead>
+        <tbody>
+          <tr><td class="k">getLogs 结果上限 20,000 条</td><td>OrderFilled 和持仓转移的 500 块窗口都是 0/6。超限时有的上游只回“invalid params”</td><td>全市场扫描窗口 ≤130 块</td></tr>
+          <tr><td class="k">getLogs 范围上限 10,000 块</td><td>50,000 块窗口 6 次成功 1 次</td><td>回溯按 10,000 块分段</td></tr>
+          <tr><td class="k">部分上游不提供 getLogs</td><td>第一轮实时扫描各窗口有 1/6～3/6 返回“method is not available on the public endpoint”，第二轮 32 次未出现</td><td>间歇性，带重试</td></tr>
+          <tr><td class="k">终点离 head 超过 1,024 块</td><td>结束于 head-3000 的 500 块窗口 4 次里 3 次被非归档上游拒绝</td><td>补数带重试</td></tr>
+          <tr><td class="k">batch</td><td>串行 eth_call 每批 40 条正常、50 条被拒。6 线程并发 20 条一批，150 批只成功 7 批</td><td>读余额用 Multicall3 或单条并发</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>05 · Ethereum（chainId 1）</h2></div>
+    <p class="secsub"><b>以太坊在三条链里最接近满足 bsc_use.md。</b>2026-04-01 以后的归档完整可查，问题集中在上游错误透传和 getLogs 窗口大小。</p>
+    <div class="card">
+      <p class="cardh good">能满足的部分</p>
+      <ul class="lst">
+        <li>常规方法和最新状态 eth_call 全部成功：USDT balanceOf、Multicall3 一次 100 个、Safe getThreshold / getOwners，p50 约 3 ms。</li>
+        <li>2026-04-01 00:00 UTC 对应块 24,781,027，二分查找的 21 次区块查询全部成功。该高度的 eth_call、getBalance、区块查询都是 6/6。</li>
+        <li>从 2025-11-01 到 2026-09-29 按月回溯，区块和 getBalance 几乎全部成功，少结果的 500 块 getLogs 各月 5/8～8/8。</li>
+        <li>窄过滤 getLogs（只看转入币安 14 的 USDT）130 / 500 / 2,000 块都是 4/4。少结果查询 3,000 / 5,000 块也是 4/4。</li>
+        <li>没有 null 缓存：老区块偶尔第一次报错，重试就能取到。</li>
+        <li>日报高峰：6 线程用 Multicall3 读 3,000 个余额，30 次成功 27 次，约 4 秒读完。</li>
+      </ul>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>要改写法或要路由器修的部分</th><th>实测</th><th>写法</th></tr></thead>
+        <tbody>
+          <tr><td class="k">上游拒绝 eth_call</td><td>单条 eth_call 约 5% 返回“rpc method is not whitelisted”：突发 300 次里 18 次，常态 14 次里 1 次</td><td>遇到就重试</td></tr>
+          <tr><td class="k">热门代币日志量大</td><td>USDT 每 130 块约 1.28 万条 Transfer，500 块窗口三十多次全部失败</td><td>以太坊每分钟只出 5 块，每轮扫 10～50 块即可</td></tr>
+          <tr><td class="k">某上游 getLogs 只允许 10 块</td><td>“You can make eth_getLogs requests with up to a 10 block range”，130 块窗口 6 次里 1 次</td><td>重试</td></tr>
+          <tr><td class="k">getLogs 范围上限 5,000 块</td><td>10,000 / 20,000 块 3/4，50,000 块 1/4，报错来自不同上游的不同上限</td><td>回溯按 5,000 块分段</td></tr>
+          <tr><td class="k">大区间请求整段落到非归档上游</td><td>第一轮有约 15 秒，大区间请求 18 次全部报“only serves recent blocks (last 1024)”</td><td>退避后重试</td></tr>
+          <tr><td class="k">终点块超前</td><td>常态流量里 500 块请求 14 次有 3 次报“block range extends beyond current head block”</td><td>终点用 head-1</td></tr>
+          <tr><td class="k">batch</td><td>串行 getBalance 每批 100 条 3/3。eth_call 60 条以内稳定，80 条 2/3，100 条 0/3。6 线程并发 20 条一批，150 批只成功 7 批</td><td>读余额用 Multicall3，batch 不要并发</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>06 · 路由器层面的共性问题</h2></div>
+    <p class="secsub">三条链的问题大多出在路由器层面，而不是哪一条链本身。熔断最容易被并发 batch 触发：三条链上 6 线程并发发 batch，几秒内整条链就开始返回 exhausted，持续几分钟。</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>问题</th><th>错误原文举例</th><th>BSC</th><th>Polygon</th><th>Ethereum</th></tr></thead>
+        <tbody>
+          <tr><td class="k">非归档或受限上游混入</td><td><span class="err">public endpoint only serves recent blocks (last 1024) · Archive requests require a personal token</span></td><td><span class="badge fail">有，影响最大</span></td><td><span class="badge part">有</span></td><td><span class="badge part">有</span></td></tr>
+          <tr><td class="k">上游特有错误直接透传</td><td><span class="err">rpc method is not whitelisted · method is not available on the public endpoint · up to a 10 block range · invalid params</span></td><td><span class="badge part">有</span></td><td><span class="badge part">有</span></td><td><span class="badge part">有，eth_call 约 5%</span></td></tr>
+          <tr><td class="k">getLogs 上限各家不同</td><td><span class="err">exceed maximum block range 5000 · max=10000 · query exceeds max results 20000</span></td><td>5,000 块、20,000 条</td><td>10,000 块、20,000 条</td><td>5,000 块、20,000 条</td></tr>
+          <tr><td class="k">连续失败后整条链熔断</td><td><span class="err">rpcrouter: all upstream endpoints exhausted</span></td><td><span class="badge fail">有</span></td><td><span class="badge fail">有</span></td><td><span class="badge fail">有</span></td></tr>
+          <tr><td class="k">batch 实际上限低于 100 条</td><td><span class="err">batch exceeds limit of 100</span></td><td>约 40 条</td><td>约 40 条</td><td>eth_call 约 60 条</td></tr>
+          <tr><td class="k">路由器的最新块比上游新</td><td><span class="err">block range extends beyond current head block</span></td><td><span class="badge part">有</span></td><td><span class="badge ok">未见</span></td><td><span class="badge part">有</span></td></tr>
+          <tr><td class="k">缓存 null 响应</td><td><span class="err">无报错，直接返回 null</span></td><td><span class="badge fail">有</span></td><td><span class="badge ok">未见</span></td><td><span class="badge ok">未见</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>07 · 建议</h2></div>
+    <p class="secsub">实时监控可以接这个路由器，前提是程序按下面七点改。<b>BSC 的补数和按块高对账在路由器修复前不要依赖它。</b></p>
+    <div class="two">
+      <div class="card">
+        <p class="cardh warn">我方程序要改的地方</p>
+        <ol class="lst">
+          <li><b>所有请求带重试。</b>遇到上游特有的错误重试 2～3 次，间隔 0.5～1 秒。遇到“all upstream endpoints exhausted”先退避 1～5 分钟，立刻重发只会延长熔断。</li>
+          <li><b>getLogs 窗口按结果条数定。</b>按当前流量，BSC 和以太坊的 USDT 全量扫描每次不超过 100～150 块，Polygon 全市场扫描不超过 130 块。能加地址或 topic 过滤的尽量加。</li>
+          <li><b>回溯分段。</b>BSC 和以太坊每段不超过 5,000 块，Polygon 不超过 10,000 块。收到“retry with the range …”时按提示拆分。</li>
+          <li><b>终点块用最新块减 1。</b></li>
+          <li><b>批量读余额改用 Multicall3 aggregate3</b>，一次 eth_call 读 100 个。保留 JSON-RPC batch 的话，每批不超过 40 条并且串行发送。</li>
+          <li><b>BSC 上的历史 null 不要当真</b>，换参数重查或改走其他节点。</li>
+          <li><b>BSC 的历史数据另配付费归档节点</b>，用于补数和日报对账。</li>
+        </ol>
+      </div>
+      <div class="card">
+        <p class="cardh bad">需要路由器方修复的事项</p>
+        <ul class="checks">
+          <li>离最新块超过 1,024 块的请求只路由到归档上游。</li>
+          <li>上游特有的错误在路由器内换上游重试，不透传给客户端，包括 not whitelisted、not available、10 block range、Archive requests require a personal token、invalid params。</li>
+          <li>不缓存 null 响应，至少对指定块高的 getBlockByNumber 和 getTransactionReceipt 不缓存。</li>
+          <li>公布并统一 getLogs 的范围上限、结果上限和 batch 的实际上限。</li>
+          <li>单个请求被上游拒绝时不要触发整条链的熔断。</li>
+          <li>返回的最新块高不超过实际处理请求的上游。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>08 · 附录：脚本与原始数据</h2></div>
+    <p class="secsub">脚本在仓库 <a href="https://github.com/zhaoxiangjunupi/protocolTest">zhaoxiangjunupi/protocolTest</a> 的 main 分支，只用 Python 标准库。结果文件按仓库约定不提交，存放在测试机的项目目录里。</p>
+<pre>python3 bsc_use_check.py --chain 56                   # BSC 第一轮：全部场景
+python3 bsc_use_check.py --chain 56 --followup        # BSC 第二轮：深度归档、batch 上限、窄过滤日志
+python3 bsc_use_check.py --chain 1                    # 以太坊第一轮
+python3 polygon_polymarket_check.py                   # Polygon / Polymarket</pre>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>结果文件</th><th>链</th><th>内容</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">results_eth_use2_20261029T091111Z.json</td><td>Ethereum</td><td>按月回溯的归档、窄过滤日志、null 缓存、batch 上限、突发</td></tr>
+          <tr><td class="mono">results_eth_use_20261029T085027Z.json</td><td>Ethereum</td><td>第一轮全部场景</td></tr>
+          <tr><td class="mono">results_polygon_polymarket2_20261029T083958Z.json</td><td>Polygon</td><td>窄过滤大区间、invalid params 成因、实时可靠性、并发 batch</td></tr>
+          <tr><td class="mono">results_polygon_polymarket_20261029T081735Z.json</td><td>Polygon</td><td>第一轮全部场景</td></tr>
+          <tr><td class="mono">results_bsc_use3_20261029T071741Z.json</td><td>BSC</td><td>老区块 null 的二分排查、冷却后的 batch 上限</td></tr>
+          <tr><td class="mono">results_bsc_use2_20261029T070922Z.json</td><td>BSC</td><td>固定高度深度归档、batch 上限、窄过滤日志、不重复地址突发</td></tr>
+          <tr><td class="mono">results_bsc_use_20261029T070126Z.json</td><td>BSC</td><td>第一轮全部场景</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer><span>rpc-router-bench · 业务适配测试</span><span>2026-10-29</span></footer>
+</div>
+<div id="tip"></div>
+
+<script>
+// Archive eth_call success by date. One row per (chain, height); ok of n consecutive requests.
+const ARCH = [
+  {chain:'Ethereum', date:'2025-11-01', block:23705373, ok:8, n:8},
+  {chain:'Ethereum', date:'2026-01-31', block:24353373, ok:7, n:8},
+  {chain:'Ethereum', date:'2026-03-02', block:24569373, ok:8, n:8},
+  {chain:'Ethereum', date:'2026-04-01', block:24785373, ok:8, n:8},
+  {chain:'Ethereum', date:'2026-05-01', block:25001373, ok:8, n:8},
+  {chain:'Ethereum', date:'2026-05-31', block:25217373, ok:7, n:8},
+  {chain:'Ethereum', date:'2026-06-30', block:25433373, ok:7, n:8},
+  {chain:'Ethereum', date:'2026-07-31', block:25649373, ok:6, n:8},
+  {chain:'Ethereum', date:'2026-08-30', block:25865373, ok:8, n:8},
+  {chain:'Ethereum', date:'2026-09-29', block:26081373, ok:8, n:8},
+  {chain:'Polygon',  date:'2026-05-04', block:86370984, ok:6, n:6},
+  {chain:'Polygon',  date:'2026-08-03', block:91370984, ok:6, n:6},
+  {chain:'Polygon',  date:'2026-10-11', block:95370984, ok:4, n:6},
+  {chain:'Polygon',  date:'2026-10-27', block:96270984, ok:6, n:6},
+  {chain:'BSC',      date:'2026-04-01', block:90000000, ok:8, n:8},
+  {chain:'BSC',      date:'2026-04-27', block:95000000, ok:7, n:8},
+  {chain:'BSC',      date:'2026-05-05', block:96500000, ok:5, n:8},
+  {chain:'BSC',      date:'2026-05-23', block:100000000, ok:6, n:8},
+  {chain:'BSC',      date:'2026-06-18', block:105000000, ok:8, n:8},
+  {chain:'BSC',      date:'2026-07-14', block:110000000, ok:8, n:8},
+  {chain:'BSC',      date:'2026-08-09', block:115000000, ok:0, n:8},
+  {chain:'BSC',      date:'2026-09-04', block:120000000, ok:8, n:8},
+  {chain:'BSC',      date:'2026-09-30', block:125000000, ok:8, n:8},
+  {chain:'BSC',      date:'2026-10-16', block:128000000, ok:7, n:8},
+  {chain:'BSC',      date:'2026-10-27', block:130000000, ok:8, n:8},
+];
+const REQ_START = '2026-04-01';
+const STYLE = {
+  BSC:      {stroke:'var(--accent)',        width:2.5, dash:'',    label:'var(--accent)'},
+  Ethereum: {stroke:'var(--series-grey)',   width:1.75, dash:'',   label:'var(--fg-2)'},
+  Polygon:  {stroke:'var(--series-grey-2)', width:1.75, dash:'5 4', label:'var(--fg-2)'},
+};
+
+(function drawArchive(){
+  const svg = document.getElementById('archchart');
+  const NS = 'http://www.w3.org/2000/svg';
+  const L = 52, R = 960, T = 40, B = 286, DAY = 864e5;
+  const t = d => Date.parse(d);
+  const tmin = Math.min(...ARCH.map(r => t(r.date))) - 15 * DAY;
+  const tmax = Math.max(...ARCH.map(r => t(r.date))) + 15 * DAY;
+  const xv = v => L + (v - tmin) / (tmax - tmin) * (R - L);
+  const x = d => xv(t(d));
+  const y = p => B - p * (B - T);
+  const el = (tag, attrs, parent, text) => {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    (parent || svg).appendChild(e);
+    return e;
+  };
+  const names = [...new Set(ARCH.map(r => r.chain))];
+  const series = s => ARCH.filter(r => r.chain === s).sort((a, b) => t(a.date) - t(b.date));
+  const low = s => series(s).reduce((m, r) => r.ok / r.n < m.ok / m.n ? r : m);
+
+  // legend
+  names.forEach((s, i) => {
+    const g = el('g', {});
+    el('line', {x1: L + i * 130, x2: L + 24 + i * 130, y1: 12, y2: 12, stroke: STYLE[s].stroke, 'stroke-width': 2.5, 'stroke-dasharray': STYLE[s].dash}, g);
+    el('text', {x: L + 30 + i * 130, y: 16, 'font-size': 12, fill: 'var(--fg-2)'}, g, s);
+  });
+  // y grid
+  [0, 0.5, 1].forEach(p => {
+    el('line', {x1: L, x2: R, y1: y(p), y2: y(p), stroke: 'var(--grid)'});
+    el('text', {x: L - 8, y: y(p) + 4, 'text-anchor': 'end', 'font-size': 12, fill: 'var(--muted)'}, null, `${p * 100}%`);
+  });
+  // x ticks: every other month
+  const d0 = new Date(tmin);
+  for (let k = 0; k < 8; k++) {
+    const v = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() + 1 + 2 * k, 1);
+    if (v >= tmax) break;
+    const d = new Date(v);
+    el('text', {x: xv(v), y: B + 22, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--muted)'}, null,
+       `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
+  }
+  // requirement start
+  el('line', {x1: x(REQ_START), x2: x(REQ_START), y1: T - 4, y2: B, stroke: 'var(--muted)', 'stroke-dasharray': '3 3'});
+  el('text', {x: x(REQ_START) + 6, y: B - 8, 'font-size': 12, fill: 'var(--fg-2)'}, null, `需求起点 ${REQ_START}`);
+  // Ethereum worst month as a reference line
+  const em = low('Ethereum'), ep = em.ok / em.n;
+  el('line', {x1: L, x2: R, y1: y(ep), y2: y(ep), stroke: 'var(--muted)', 'stroke-dasharray': '2 4'});
+  el('text', {x: L + 6, y: y(ep) - 6, 'font-size': 12, fill: 'var(--fg-2)'}, null, `以太坊最低 ${em.ok}/${em.n}（${Math.round(ep * 100)}%）`);
+
+  const tip = document.getElementById('tip');
+  const show = (ev, r) => {
+    tip.innerHTML = `<b>${r.chain}</b> ${r.date}<br>块 ${r.block.toLocaleString('en-US')}：${r.ok}/${r.n} 成功`;
+    tip.style.opacity = 1;
+    tip.style.left = Math.min(ev.clientX + 14, innerWidth - 240) + 'px';
+    tip.style.top = (ev.clientY + 14) + 'px';
+  };
+  const hide = () => { tip.style.opacity = 0; };
+
+  // series, BSC drawn last so it sits on top
+  names.forEach(s => {
+    const st = STYLE[s], rows = series(s), g = el('g', {});
+    el('path', {d: rows.map((r, i) => `${i ? 'L' : 'M'}${x(r.date)},${y(r.ok / r.n)}`).join(' '),
+                fill: 'none', stroke: st.stroke, 'stroke-width': st.width, 'stroke-dasharray': st.dash}, g);
+    rows.forEach(r => {
+      const c = el('circle', {cx: x(r.date), cy: y(r.ok / r.n), r: 4.5, fill: st.stroke, tabindex: 0}, g);
+      c.style.cursor = 'help';
+      c.addEventListener('mousemove', ev => show(ev, r));
+      c.addEventListener('mouseleave', hide);
+      c.addEventListener('focus', () => { const b = c.getBoundingClientRect(); show({clientX: b.right, clientY: b.bottom}, r); });
+      c.addEventListener('blur', hide);
+    });
+  });
+  // label the worst point of BSC and Polygon (Ethereum's is the reference line);
+  // Polygon's sits near the right edge, so its label goes to the left of the point
+  ['Polygon', 'BSC'].forEach(s => {
+    const r = low(s), p = r.ok / r.n, left = s === 'Polygon';
+    el('text', {x: left ? x(r.date) - 10 : x(r.date) + 10, y: p < 0.2 ? y(p) - 8 : y(p) + 18, 'font-size': 12,
+                'text-anchor': left ? 'end' : 'start',
+                'font-weight': s === 'BSC' ? 700 : 400, fill: STYLE[s].label}, null, `${s} ${r.ok}/${r.n}`);
+  });
+})();
+</script>
+</body>
+</html>
