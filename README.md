@@ -29,6 +29,7 @@
 | `latency_cache.py` | 稳定延迟(多轮)+ 缓存冷/热对比 + 方法是否缓存 + latest 缓存时间 |
 | `build_report.py` | 合并上面两个脚本的结果 → `report_data.json` / `report_embed.json` / `runs/<时间>.json`,并用模板生成新的报告页 |
 | `run_all.sh` | 一条命令跑完整轮(拉快照 → 分类 → 可用性 → 延迟/缓存 → 报告) |
+| `bsc_use.md` / `bsc_use_check.py` | BSC 业务需求(方法、频率、归档范围)和按这份需求做的专项核对脚本,见下面"BSC 业务需求核对" |
 | `report_template.html` | 报告页模板(数据块为空，由 `build_report.py` 填入) |
 | `rpc_report*.html` | 自包含的汇总报告页(数据已内联，浏览器直接打开),每次运行一份 |
 | `runs/` | 每次运行的摘要(测法、关键指标、每条链的问题),报告的趋势对比读它 |
@@ -110,6 +111,21 @@ python3 build_report.py
 | `--runs` | 运行摘要目录(趋势对比用) | `runs` |
 
 趋势对比只和**更早**的运行比较(按可用性测试的时间),所以用旧结果重新生成报告也不会拿新数据去比。测法(采样次数、限速、是否复用连接等)也记在摘要里，测法不同的运行之间数字不能直接比较，报告里会标出来。
+
+## BSC 业务需求核对(`bsc_use_check.py`)
+
+`bsc_use.md` 是 BSC 线上程序的真实用法(带过滤的 `eth_getLogs`、`eth_call` 读余额 / Multicall3 / Safe 多签、几十到一百条的批量、2026-04-01 以后的归档、每分钟约 80 次 + 日报高峰)。`bsc_use_check.py` 按这份需求对 `/rpc/56` 逐项实测:
+
+```bash
+python3 bsc_use_check.py                      # 第一轮:basic,call,logs_rt,archive,logs_big,batch,sustain,burst
+python3 bsc_use_check.py --followup --reps 8  # 第二轮:固定深度归档、batch 上限(不重复地址)、窄过滤日志、不重复地址突发
+```
+
+输出 `results_bsc_use*_<时间>.json`(逐次样本 + 汇总 + 日志)。突发测试放在最后跑，因为大批量失败会让这条链熔断几分钟。
+
+2026-10-29 结论:最新状态 + 窄过滤实时日志 + 单条 / ≤40 条批量都能满足;不能满足的有四点 ——
+历史块高请求会随机落到非归档上游(成功率 60～100% 波动，个别高度 0%);老区块 `eth_getBlockByNumber` 的 null 会被缓存超过 10 分钟，重试无效;
+`eth_getLogs` 上游范围限制不一(部分只允许 5000 块,结果上限 20,000 条),5 万块回溯大多失败;batch 路由器硬限 100 条、上游 50 条左右就拒绝且失败后熔断。
 
 ## 方法分组
 
