@@ -30,6 +30,7 @@
 | `build_report.py` | 合并上面两个脚本的结果 → `report_data.json` / `report_embed.json` / `runs/<时间>.json`,并用模板生成新的报告页 |
 | `run_all.sh` | 一条命令跑完整轮(拉快照 → 分类 → 可用性 → 延迟/缓存 → 报告) |
 | `bsc_use.md` / `bsc_use_check.py` | BSC 业务需求(方法、频率、归档范围)和按这份需求做的专项核对脚本,见下面"BSC 业务需求核对" |
+| `polygon_polymarket_check.py` | 按 Polymarket 的用法(扫 OrderFilled / ERC-1155 持仓转移、读持仓余额、历史回溯、批量)核对 Polygon 入口,见下面"Polygon / Polymarket 核对" |
 | `report_template.html` | 报告页模板(数据块为空，由 `build_report.py` 填入) |
 | `rpc_report*.html` | 自包含的汇总报告页(数据已内联，浏览器直接打开),每次运行一份 |
 | `runs/` | 每次运行的摘要(测法、关键指标、每条链的问题),报告的趋势对比读它 |
@@ -126,6 +127,21 @@ python3 bsc_use_check.py --followup --reps 8  # 第二轮:固定深度归档、b
 2026-10-29 结论:最新状态 + 窄过滤实时日志 + 单条 / ≤40 条批量都能满足;不能满足的有四点 ——
 历史块高请求会随机落到非归档上游(成功率 60～100% 波动，个别高度 0%);老区块 `eth_getBlockByNumber` 的 null 会被缓存超过 10 分钟，重试无效;
 `eth_getLogs` 上游范围限制不一(部分只允许 5000 块,结果上限 20,000 条),5 万块回溯大多失败;batch 路由器硬限 100 条、上游 50 条左右就拒绝且失败后熔断。
+
+## Polygon / Polymarket 核对(`polygon_polymarket_check.py`)
+
+按 Polymarket 在 Polygon 上的用法对 `/rpc/137` 做同样的核对。合约地址和事件 topic 取自 2026-10-29 的链上回执(Polymarket 已换到新交易所合约 `0xe1111800…` / `0xe2222d27…`,抵押代币 `0xc011a7e1…`,持仓仍是 ConditionalTokens `0x4D97DCd9…` 的 ERC-1155):
+
+```bash
+python3 polygon_polymarket_check.py                   # basic,call,logs_rt,archive,logs_big,nullcache,batch,sustain,burst
+python3 polygon_polymarket_check.py --scenarios call,logs_rt --reps 10
+```
+
+输出 `results_polygon_polymarket_<时间>.json`。它复用 `bsc_use_check.py` 里的采样 / 汇总函数。
+
+2026-10-29 结论:最新状态(含 ERC-1155 balanceOf / balanceOfBatch / Multicall3)、130 块窗口的实时 OrderFilled 扫描(20/20)、回到 2024-04 的历史状态和回执都能用，也没有 BSC 那种 null 缓存。
+要按限制改写法的有:上游结果上限 20,000 条(Polymarket 每块约 60 笔成交,全市场扫描窗口要 ≤130～250 块,500 块全失败);单次回溯 ≤10,000 块;
+有上游间歇性回 "method is not available on the public endpoint";窗口结束块离 head 超过 1024 块会落到非归档上游;batch 串行 ≤40 条可用但并发 batch 立刻把链打到 exhausted，批量读余额用 Multicall3 或单条并发(30 req/s 已验证)。
 
 ## 方法分组
 
