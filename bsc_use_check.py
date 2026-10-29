@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-"""Check whether the router's BSC (chain 56) endpoint covers the workload in bsc_use.md.
+"""Check whether the router covers the workload in bsc_use.md on BSC (chain 56) or Ethereum (chain 1).
 
-Scenarios (all against POST /rpc/56):
+--chain picks the chain profile (token, holder, deep heights); default 56. Polygon has its own
+script (polygon_polymarket_check.py) because its workload is different.
+
+Scenarios (all against POST /rpc/{chain}):
   basic     : the plain methods listed in bsc_use.md
   call      : eth_call latest - ERC20 balanceOf, Multicall3 aggregate3, Safe getThreshold/getOwners
   logs_rt   : eth_getLogs with address+topic filter over the latest 130 / 500 blocks, repeated
@@ -38,6 +41,34 @@ SEL_BALANCE_OF = "0x70a08231"
 SEL_GET_THRESHOLD = "0xe75235b8"
 SEL_GET_OWNERS = "0xa0e67e2b"
 SEL_AGGREGATE3 = "0x82ad56cb"
+NAME = "BSC"
+
+# Per-chain constants. USDT / BINANCE_HOT keep their BSC-era names: they mean "the token" and
+# "a big holder of it" on whichever chain is selected. Multicall3 and the Safe factories have the
+# same address on every chain.
+CHAIN_PROFILES = {
+    56: {"name": "BSC", "slug": "bsc", "chain_hex": "0x38",
+         "token": "0x55d398326f99059fF775485246999027B3197955",          # BSC-USD (USDT)
+         "holder": "0x8894E0a0c962CB723c1976a4421c95949bE2D4E3",         # Binance hot wallet
+         "apr_lo": lambda h: 40_000_000,                                 # binary search lower bound
+         "deep_heights": lambda h: [85_000_000, 90_000_000, 95_000_000, 96_500_000, 100_000_000, 105_000_000,
+                                    110_000_000, 115_000_000, 120_000_000, 125_000_000, 128_000_000, 130_000_000]},
+    1: {"name": "Ethereum", "slug": "eth", "chain_hex": "0x1",
+        "token": "0xdAC17F958D2ee523a2206206994597C13D831ec7",           # USDT
+        "holder": "0x28C6c06298d514Db089934071355E5743bf21d60",          # Binance 14
+        "apr_lo": lambda h: h - 3_000_000,                               # ~14 months at 12 s
+        "deep_heights": lambda h: [h - k * 216_000 for k in (12, 9, 8, 7, 6, 5, 4, 3, 2, 1)]},   # ~monthly back
+}
+
+
+def use_chain(chain_id):
+    """Point the module-level constants at another chain profile."""
+    global CHAIN, USDT, BINANCE_HOT, NAME, PROFILE
+    PROFILE = CHAIN_PROFILES[chain_id]
+    CHAIN, USDT, BINANCE_HOT, NAME = chain_id, PROFILE["token"], PROFILE["holder"], PROFILE["name"]
+
+
+PROFILE = CHAIN_PROFILES[56]
 
 LOG = []
 RESULTS = {}
@@ -149,7 +180,7 @@ def scen_basic(h):
     txs = b["result"]["transactions"] if b["ok"] else []
     tx_hash = txs[0]["hash"] if txs else None
     specs = [
-        ("eth_chainId", {"method": "eth_chainId", "params": [], "expect": "0x38"}),
+        ("eth_chainId", {"method": "eth_chainId", "params": [], "expect": PROFILE["chain_hex"]}),
         ("eth_blockNumber", {"method": "eth_blockNumber", "params": []}),
         ("eth_getBlockByNumber_latest", {"method": "eth_getBlockByNumber", "params": ["latest", False], "nonnull": True}),
         ("eth_getCode_USDT", {"method": "eth_getCode", "params": [USDT, "latest"]}),
@@ -236,7 +267,7 @@ def scen_archive(h, reps):
     log("== archive (historical heights) ==")
     # locate 2026-04-01 00:00 UTC by binary search
     ts_apr = int(datetime(2026, 4, 1, tzinfo=timezone.utc).timestamp())
-    b_apr, probes = find_block_at(ts_apr, 40_000_000, h)
+    b_apr, probes = find_block_at(ts_apr, PROFILE["apr_lo"](h), h)
     log("  block at 2026-04-01: %s (%d probes, %s)" % (b_apr, probes, summarize("archive_probe_getBlockByNumber")))
     heights = [("head-500", h - 500), ("head-1000", h - 1000), ("head-1100", h - 1100), ("head-2000", h - 2000),
                ("head-10k", h - 10_000), ("head-100k", h - 100_000), ("head-1M", h - 1_000_000),
@@ -389,12 +420,15 @@ def main():
     ap.add_argument("--burst-total", type=int, default=3000)
     ap.add_argument("--burst-threads", type=int, default=6)
     ap.add_argument("--sustain-seconds", type=int, default=120)
-    ap.add_argument("--out", default="results_bsc_use_%s.json" % datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    ap.add_argument("--chain", type=int, default=56, choices=sorted(CHAIN_PROFILES))
+    ap.add_argument("--out", help="default results_<chain>_use_<time>.json")
     a = ap.parse_args()
+    use_chain(a.chain)
+    a.out = a.out or "results_%s_use_%s.json" % (PROFILE["slug"], datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     want = set(a.scenarios.split(","))
 
     h = head()
-    log("BSC head = %d (%s)" % (h, rpcutil.BASE))
+    log("%s (chain %d) head = %d (%s)" % (NAME, CHAIN, h, rpcutil.BASE))
     addrs = scen_basic(h) if "basic" in want else [BINANCE_HOT]
     holders = scen_call(addrs) if "call" in want else [BINANCE_HOT]
     if "logs_rt" in want:
@@ -411,7 +445,7 @@ def main():
         scen_burst(holders, a.burst_total, a.burst_threads)
 
     summary = {k: summarize(k) for k in RESULTS if not k.startswith("_")}
-    json.dump({"head": h, "when": datetime.now(timezone.utc).isoformat(), "summary": summary,
+    json.dump({"chain": CHAIN, "head": h, "when": datetime.now(timezone.utc).isoformat(), "summary": summary,
                "samples": {k: v for k, v in RESULTS.items()}, "log": LOG, "conn": rpcutil.conn_stats()},
               open(a.out, "w"), indent=1, ensure_ascii=False)
     log("saved %s ; %s" % (a.out, rpcutil.conn_stats()))
@@ -428,8 +462,7 @@ def rand_addr(rng):
 def scen_archive_deep(reps):
     """Fixed deep heights: block body / state / logs, every try recorded (no retry)."""
     log("== archive deep (fixed heights, %d tries each) ==" % reps)
-    heights = [85_000_000, 90_000_000, 95_000_000, 96_500_000, 100_000_000, 105_000_000,
-               110_000_000, 115_000_000, 120_000_000, 125_000_000, 128_000_000, 130_000_000]
+    heights = PROFILE["deep_heights"](head())
     for n in heights:
         ts = None
         for _ in range(reps):
@@ -472,7 +505,7 @@ def scen_batch_limit(reps):
 
 def scen_logs_filtered(reps):
     """Realtime getLogs with a filter that stays far below 20k results, 130 / 500 / 2000 blocks."""
-    log("== getLogs realtime with narrow filter (USDT Transfer to Binance hot) ==")
+    log("== getLogs realtime with narrow filter (token Transfer to the big holder) ==")
     topics = [TOPIC_TRANSFER, None, "0x" + pad_addr(BINANCE_HOT)]
     for window in (130, 500, 2000):
         for _ in range(reps):
@@ -530,10 +563,13 @@ def main2():
     ap = argparse.ArgumentParser()
     ap.add_argument("--reps", type=int, default=8)
     ap.add_argument("--scenarios", default="archive_deep,batch_limit,logs_filtered,burst_unique")
-    ap.add_argument("--out", default="results_bsc_use2_%s.json" % datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    ap.add_argument("--chain", type=int, default=56, choices=sorted(CHAIN_PROFILES))
+    ap.add_argument("--out", help="default results_<chain>_use2_<time>.json")
     a = ap.parse_args()
+    use_chain(a.chain)
+    a.out = a.out or "results_%s_use2_%s.json" % (PROFILE["slug"], datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     want = set(a.scenarios.split(","))
-    log("BSC head = %d" % head())
+    log("%s (chain %d) head = %d" % (NAME, CHAIN, head()))
     if "archive_deep" in want:
         scen_archive_deep(a.reps)
     if "batch_limit" in want:
