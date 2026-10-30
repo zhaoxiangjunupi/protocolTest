@@ -30,7 +30,7 @@
 | `build_report.py` | 合并上面两个脚本的结果 → `report_data.json` / `report_embed.json` / `runs/<时间>.json`,并用模板生成新的报告页 |
 | `run_all.sh` | 一条命令跑完整轮(拉快照 → 分类 → 可用性 → 延迟/缓存 → 报告) |
 | `bsc_use.md` / `bsc_use_check.py` | BSC 业务需求(方法、频率、归档范围)和按这份需求做的专项核对脚本(`--chain 1` 测以太坊、`--chain 143` 测 Monad),见下面"BSC 业务需求核对" |
-| `rpc_workload_report_20261029.html` | BSC / Polygon / 以太坊三链业务适配测试的汇总报告页 |
+| `rpc_workload_report_20261029.html` | BSC / Polygon / 以太坊 / Monad 四链业务适配测试的汇总报告页 |
 | `polygon_polymarket_check.py` | 按 Polymarket 的用法(扫 OrderFilled / ERC-1155 持仓转移、读持仓余额、历史回溯、批量)核对 Polygon 入口(`--chain 143` 测 Monad),见下面"Polygon / Polymarket 核对" |
 | `report_template.html` | 报告页模板(数据块为空，由 `build_report.py` 填入) |
 | `rpc_report*.html` | 自包含的汇总报告页(数据已内联，浏览器直接打开),每次运行一份 |
@@ -125,7 +125,7 @@ python3 bsc_use_check.py --chain 1            # 同一套用法测以太坊(USDT
 python3 bsc_use_check.py --chain 143          # 同一套用法测 Monad(USDC、分段扫描找到的 Safe,getLogs 只到约 1,000 块)
 ```
 
-三条链(BSC、Polygon、以太坊)2026-10-29 的结果汇总在 `rpc_workload_report_20261029.html`。
+四条链(BSC、Polygon、以太坊、Monad)2026-10-29～10-30 的结果汇总在 `rpc_workload_report_20261029.html`。
 
 输出 `results_bsc_use*_<时间>.json`(逐次样本 + 汇总 + 日志)。突发测试放在最后跑，因为大批量失败会让这条链熔断几分钟。
 

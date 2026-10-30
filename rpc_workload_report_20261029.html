@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>三链业务适配测试</title>
-<meta name="description" content="cryptostack RPC 路由器按真实业务用法测试 BSC、Polygon(Polymarket)、Ethereum 三条链的结果与建议">
+<title>四链业务适配测试</title>
+<meta name="description" content="cryptostack RPC 路由器按真实业务用法测试 BSC、Polygon(Polymarket)、Ethereum、Monad 四条链的结果与建议">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap">
@@ -15,7 +15,7 @@
     --bg:#f4f3ef; --surface:#ffffff; --surface-2:#f6f5f1; --raise:#fbfbf9;
     --fg:#0b0b0b; --fg-2:#52514e; --muted:#898781;
     --grid:#e4e3dc; --border:rgba(11,11,11,.11); --border-strong:rgba(11,11,11,.18);
-    --accent:#2a78d6; --series-grey:#a9a79f; --series-grey-2:#cfcdc5;
+    --accent:#2a78d6; --series-2:#eb6834; --series-grey:#a9a79f; --series-grey-2:#cfcdc5;
     --good:#0ca30c; --warn:#d98b00; --crit:#d03b3b;
     --good-ink:#0a7a0a; --warn-ink:#a06500; --crit-ink:#c0302f;
     --shadow:0 1px 2px rgba(11,11,11,.05),0 1px 0 rgba(11,11,11,.03);
@@ -27,7 +27,7 @@
     --bg:#0c0c0c; --surface:#191918; --surface-2:#211f1e; --raise:#201e1d;
     --fg:#f0efec; --fg-2:#c3c2b7; --muted:#8f8d86;
     --grid:#2c2c2a; --border:rgba(255,255,255,.11); --border-strong:rgba(255,255,255,.2);
-    --accent:#3987e5; --series-grey:#77756f; --series-grey-2:#4c4b47;
+    --accent:#3987e5; --series-2:#d95926; --series-grey:#77756f; --series-grey-2:#4c4b47;
     --good:#0ca30c; --warn:#fab219; --crit:#e05a5a;
     --good-ink:#2fb82f; --warn-ink:#f0b53a; --crit-ink:#e86a6a;
     --shadow:0 1px 2px rgba(0,0,0,.4);
@@ -37,7 +37,7 @@
     --bg:#0c0c0c; --surface:#191918; --surface-2:#211f1e; --raise:#201e1d;
     --fg:#f0efec; --fg-2:#c3c2b7; --muted:#8f8d86;
     --grid:#2c2c2a; --border:rgba(255,255,255,.11); --border-strong:rgba(255,255,255,.2);
-    --accent:#3987e5; --series-grey:#77756f; --series-grey-2:#4c4b47;
+    --accent:#3987e5; --series-2:#d95926; --series-grey:#77756f; --series-grey-2:#4c4b47;
     --good:#0ca30c; --warn:#fab219; --crit:#e05a5a;
     --good-ink:#2fb82f; --warn-ink:#f0b53a; --crit-ink:#e86a6a;
     --shadow:0 1px 2px rgba(0,0,0,.4);
@@ -75,7 +75,7 @@
   .card + .card,.card + .tablewrap,.tablewrap + .card,.tablewrap + .tablewrap{margin-top:14px}
 
   /* verdict cards */
-  .verdicts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .verdicts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
   .vcard{border:1px solid var(--border);border-radius:10px;padding:15px 17px;background:var(--surface);box-shadow:var(--shadow);border-top:3px solid var(--muted)}
   .vcard.ok{border-top-color:var(--good)} .vcard.part{border-top-color:var(--warn)} .vcard.bad{border-top-color:var(--crit)}
   .vcard .cn{font-family:var(--mono);font-size:12px;color:var(--muted)}
@@ -128,6 +128,7 @@
 
   footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--border);font-size:12.5px;color:var(--muted);font-family:var(--mono);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
 
+  @media (max-width:1000px){ .verdicts{grid-template-columns:repeat(2,minmax(0,1fr))} }
   @media (max-width:760px){
     .wrap{padding-inline:16px}
     .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -140,22 +141,22 @@
 <body>
 <div class="wrap">
   <header class="mast">
-    <div class="kick">业务适配测试 · BSC · Polygon · Ethereum</div>
-    <h1>RPC 路由器三链业务适配测试报告</h1>
-    <p class="sub">三条链都能支撑<b>最新状态查询、窄过滤的实时日志和单条并发请求</b>；都不能原样支撑“500 块 getLogs、几十到一百条 batch、5 万块回溯”的写法。归档方面以太坊最好，<b>BSC 最差，BSC 的历史数据需要另配归档节点</b>。</p>
+    <div class="kick">业务适配测试 · BSC · Polygon · Ethereum · Monad</div>
+    <h1>RPC 路由器四链业务适配测试报告</h1>
+    <p class="sub">四条链都能支撑<b>最新状态查询、窄过滤的实时日志和单条并发请求</b>（Monad 的日志查询要带重试）；都不能原样支撑“500 块 getLogs、几十到一百条 batch、5 万块回溯”的写法。归档方面以太坊最好，<b>BSC 和 Monad 最差，这两条链的历史数据需要另配归档节点</b>。</p>
     <div class="metaline">
-      <span>测试时间 <b>2026-10-29 07:00–09:11 UTC</b></span>
+      <span>测试时间 <b>2026-10-29 07:00–10:47 · 10-30 03:13–03:24 UTC</b></span>
       <span>入口 <b>rpc.cryptostack.ai/rpc/{chainId}</b></span>
-      <span>请求量 <b>三条链共约 5,000 次</b></span>
+      <span>请求量 <b>四条链共约 8,600 次</b></span>
       <span>脚本 <b>bsc_use_check.py · polygon_polymarket_check.py</b></span>
     </div>
   </header>
 
   <div class="kpis">
-    <div class="kpi good"><div class="lab">实时监控可直接接入</div><div class="val">3<small>/ 3 条链</small></div><div class="note">最新状态、窄过滤日志、单条并发都稳定</div></div>
-    <div class="kpi crit"><div class="lab">BSC 历史 eth_call 最低成功率</div><div class="val">0<small>%</small></div><div class="note">2026-08-09 的高度连续 8 次全部失败</div></div>
-    <div class="kpi crit"><div class="lab">热门代币 500 块 getLogs</div><div class="val">0<small>%</small></div><div class="note">三条链都超过 20,000 条结果上限</div></div>
-    <div class="kpi crit"><div class="lab">6 线程并发 batch 成功率</div><div class="val">≤5<small>%</small></div><div class="note">Polygon、以太坊 150 批各只成功 7 批</div></div>
+    <div class="kpi good"><div class="lab">实时监控可直接接入</div><div class="val">3<small>/ 4 条链</small></div><div class="note">Monad 的 130～500 块 getLogs 间歇约 3 成失败，要带重试</div></div>
+    <div class="kpi crit"><div class="lab">历史 eth_call 最低成功率</div><div class="val">0<small>%</small></div><div class="note">BSC 1 个、Monad 3 个月度高度连续 8 次全部失败</div></div>
+    <div class="kpi crit"><div class="lab">热门代币 500 块 getLogs</div><div class="val">0<small>%</small></div><div class="note">BSC、Polygon、以太坊都超过 20,000 条结果上限</div></div>
+    <div class="kpi crit"><div class="lab">6 线程并发 batch 成功率</div><div class="val">≤5<small>%</small></div><div class="note">Polygon、以太坊 150 批各只成功 7 批，Monad 3 批</div></div>
   </div>
 
   <section>
@@ -165,25 +166,26 @@
       <div class="vcard part"><div class="cn">Ethereum · chainId 1</div><div class="vv">改写法后基本满足</div><p>2026-04-01 以后的归档完整可查。问题集中在上游错误透传，以及热门代币的 getLogs 窗口要缩小。</p></div>
       <div class="vcard part"><div class="cn">Polygon · chainId 137</div><div class="vv">改写法后基本满足</div><p>Polymarket 式索引可用：130 块的实时成交扫描 20/20，历史状态能查到 2024-04。全市场扫描的窗口要 ≤130 块。</p></div>
       <div class="vcard bad"><div class="cn">BSC · chainId 56</div><div class="vv">不满足</div><p>历史请求经常落到非归档上游，个别高度 0/8，老区块的 null 还会被缓存。补数和对账要另配归档节点。</p></div>
+      <div class="vcard bad"><div class="cn">Monad · chainId 143</div><div class="vv">不满足</div><p>最新状态全部可用，Polymarket 式查询带重试可用。历史状态时有时无，3 个月度高度 0/8，老区块 null 被缓存。getLogs 间歇只允许约 100 块。</p></div>
     </div>
 
     <h3 class="sm">逐项能力对照</h3>
     <div class="legend-inline"><span><span class="badge ok">可用</span>能直接用</span><span><span class="badge part">有条件</span>要改写法或加重试</span><span><span class="badge fail">不可用</span>按文档原写法做不了</span></div>
     <div class="tablewrap">
       <table>
-        <thead><tr><th>场景</th><th>BSC</th><th>Polygon</th><th>Ethereum</th></tr></thead>
+        <thead><tr><th>场景</th><th>BSC</th><th>Polygon</th><th>Ethereum</th><th>Monad</th></tr></thead>
         <tbody>
-          <tr><td class="k">常规方法</td><td><span class="badge ok">可用</span><span class="cellnote">全部成功</span></td><td><span class="badge ok">可用</span><span class="cellnote">全部成功</span></td><td><span class="badge ok">可用</span><span class="cellnote">全部成功</span></td></tr>
-          <tr><td class="k">最新状态 eth_call</td><td><span class="badge ok">可用</span><span class="cellnote">含 Multicall3 100 个、Safe</span></td><td><span class="badge ok">可用</span><span class="cellnote">含 ERC-1155 balanceOfBatch</span></td><td><span class="badge part">有条件</span><span class="cellnote">约 5% 被上游拒绝，需重试</span></td></tr>
-          <tr><td class="k">窄过滤实时 getLogs</td><td><span class="badge ok">可用</span><span class="cellnote">130 / 500 块 4/4</span></td><td><span class="badge ok">可用</span><span class="cellnote">2,000 块内 5/6～6/6</span></td><td><span class="badge ok">可用</span><span class="cellnote">130 / 500 / 2,000 块 4/4</span></td></tr>
-          <tr><td class="k">热门事件全量 getLogs · 130 块</td><td><span class="badge part">有条件</span><span class="cellnote">常态 15/16</span></td><td><span class="badge ok">可用</span><span class="cellnote">OrderFilled 20/20</span></td><td><span class="badge part">有条件</span><span class="cellnote">常态 13/14</span></td></tr>
-          <tr><td class="k">热门事件全量 getLogs · 500 块</td><td><span class="badge fail">不可用</span><span class="cellnote">超 20,000 条</span></td><td><span class="badge fail">不可用</span><span class="cellnote">超 20,000 条</span></td><td><span class="badge fail">不可用</span><span class="cellnote">超 20,000 条</span></td></tr>
-          <tr><td class="k">2026-04-01 以后的归档</td><td><span class="badge fail">不可用</span><span class="cellnote">个别高度 0/8，null 被缓存</span></td><td><span class="badge ok">可用</span><span class="cellnote">各高度 4/6～6/6</span></td><td><span class="badge ok">可用</span><span class="cellnote">各月 6/8～8/8</span></td></tr>
-          <tr><td class="k">单次 5 万块回溯</td><td><span class="badge fail">不可用</span><span class="cellnote">上限 5,000 块</span></td><td><span class="badge fail">不可用</span><span class="cellnote">上限 10,000 块</span></td><td><span class="badge fail">不可用</span><span class="cellnote">上限 5,000 块</span></td></tr>
-          <tr><td class="k">JSON-RPC batch · 串行</td><td><span class="badge part">有条件</span><span class="cellnote">≤40 条</span></td><td><span class="badge part">有条件</span><span class="cellnote">≤40 条</span></td><td><span class="badge part">有条件</span><span class="cellnote">eth_call ≤60 条</span></td></tr>
-          <tr><td class="k">JSON-RPC batch · 并发</td><td><span class="badge fail">不可用</span><span class="cellnote">90 批 0 成功</span></td><td><span class="badge fail">不可用</span><span class="cellnote">150 批成功 7</span></td><td><span class="badge fail">不可用</span><span class="cellnote">150 批成功 7</span></td></tr>
-          <tr><td class="k">单条并发 eth_call</td><td><span class="badge ok">可用</span><span class="cellnote">300/300，28 次/秒</span></td><td><span class="badge ok">可用</span><span class="cellnote">300/300，30 次/秒</span></td><td><span class="badge part">有条件</span><span class="cellnote">282/300，30 次/秒</span></td></tr>
-          <tr><td class="k">Multicall3 批量读余额</td><td><span class="badge ok">可用</span><span class="cellnote">一次 100 个</span></td><td><span class="badge ok">可用</span><span class="cellnote">一次 100 个</span></td><td><span class="badge ok">可用</span><span class="cellnote">3,000 个约 4 秒，27/30</span></td></tr>
+          <tr><td class="k">常规方法</td><td><span class="badge ok">可用</span><span class="cellnote">全部成功</span></td><td><span class="badge ok">可用</span><span class="cellnote">全部成功</span></td><td><span class="badge ok">可用</span><span class="cellnote">全部成功</span></td><td><span class="badge ok">可用</span><span class="cellnote">全部成功</span></td></tr>
+          <tr><td class="k">最新状态 eth_call</td><td><span class="badge ok">可用</span><span class="cellnote">含 Multicall3 100 个、Safe</span></td><td><span class="badge ok">可用</span><span class="cellnote">含 ERC-1155 balanceOfBatch</span></td><td><span class="badge part">有条件</span><span class="cellnote">约 5% 被上游拒绝，需重试</span></td><td><span class="badge ok">可用</span><span class="cellnote">含 Multicall3、Safe、ERC-1155</span></td></tr>
+          <tr><td class="k">窄过滤实时 getLogs</td><td><span class="badge ok">可用</span><span class="cellnote">130 / 500 块 4/4</span></td><td><span class="badge ok">可用</span><span class="cellnote">2,000 块内 5/6～6/6</span></td><td><span class="badge ok">可用</span><span class="cellnote">130 / 500 / 2,000 块 4/4</span></td><td><span class="badge part">有条件</span><span class="cellnote">10-29 4/4；10-30 少结果 130 块 7/12</span></td></tr>
+          <tr><td class="k">热门事件全量 getLogs · 130 块</td><td><span class="badge part">有条件</span><span class="cellnote">常态 15/16</span></td><td><span class="badge ok">可用</span><span class="cellnote">OrderFilled 20/20</span></td><td><span class="badge part">有条件</span><span class="cellnote">常态 13/14</span></td><td><span class="badge part">有条件</span><span class="cellnote">17/21，失败均为范围过大</span></td></tr>
+          <tr><td class="k">热门事件全量 getLogs · 500 块</td><td><span class="badge fail">不可用</span><span class="cellnote">超 20,000 条</span></td><td><span class="badge fail">不可用</span><span class="cellnote">超 20,000 条</span></td><td><span class="badge fail">不可用</span><span class="cellnote">超 20,000 条</span></td><td><span class="badge part">有条件</span><span class="cellnote">8/9，约 9,000 条未超上限</span></td></tr>
+          <tr><td class="k">2026-04-01 以后的归档</td><td><span class="badge fail">不可用</span><span class="cellnote">个别高度 0/8，null 被缓存</span></td><td><span class="badge ok">可用</span><span class="cellnote">各高度 4/6～6/6</span></td><td><span class="badge ok">可用</span><span class="cellnote">各月 6/8～8/8</span></td><td><span class="badge fail">不可用</span><span class="cellnote">3 个高度 0/8，null 被缓存</span></td></tr>
+          <tr><td class="k">单次 5 万块回溯</td><td><span class="badge fail">不可用</span><span class="cellnote">上限 5,000 块</span></td><td><span class="badge fail">不可用</span><span class="cellnote">上限 10,000 块</span></td><td><span class="badge fail">不可用</span><span class="cellnote">上限 5,000 块</span></td><td><span class="badge fail">不可用</span><span class="cellnote">上限约 1,000 块</span></td></tr>
+          <tr><td class="k">JSON-RPC batch · 串行</td><td><span class="badge part">有条件</span><span class="cellnote">≤40 条</span></td><td><span class="badge part">有条件</span><span class="cellnote">≤40 条</span></td><td><span class="badge part">有条件</span><span class="cellnote">eth_call ≤60 条</span></td><td><span class="badge part">有条件</span><span class="cellnote">≤20～40 条，两天不同</span></td></tr>
+          <tr><td class="k">JSON-RPC batch · 并发</td><td><span class="badge fail">不可用</span><span class="cellnote">90 批 0 成功</span></td><td><span class="badge fail">不可用</span><span class="cellnote">150 批成功 7</span></td><td><span class="badge fail">不可用</span><span class="cellnote">150 批成功 7</span></td><td><span class="badge fail">不可用</span><span class="cellnote">150 批成功 0～3</span></td></tr>
+          <tr><td class="k">单条并发 eth_call</td><td><span class="badge ok">可用</span><span class="cellnote">300/300，28 次/秒</span></td><td><span class="badge ok">可用</span><span class="cellnote">300/300，30 次/秒</span></td><td><span class="badge part">有条件</span><span class="cellnote">282/300，30 次/秒</span></td><td><span class="badge part">有条件</span><span class="cellnote">300/300，43 次/秒；前一天 6 线程 80%</span></td></tr>
+          <tr><td class="k">Multicall3 批量读余额</td><td><span class="badge ok">可用</span><span class="cellnote">一次 100 个</span></td><td><span class="badge ok">可用</span><span class="cellnote">一次 100 个</span></td><td><span class="badge ok">可用</span><span class="cellnote">3,000 个约 4 秒，27/30</span></td><td><span class="badge ok">可用</span><span class="cellnote">3,000 个 30/30，约 2,000 个/秒</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -191,12 +193,13 @@
 
   <section>
     <div class="sechead"><h2>01 · 测试对象与方法</h2></div>
-    <p class="secsub">每条链跑两到四轮、约 1,400～1,900 次请求。BSC 和以太坊按 <code>bsc_use.md</code> 的用法测，Polygon 按 Polymarket 索引的用法测。</p>
+    <p class="secsub">每条链跑两到四轮、约 1,400～3,600 次请求。BSC 和以太坊按 <code>bsc_use.md</code> 的用法测，Polygon 按 Polymarket 索引的用法测，Monad 两套都测。</p>
     <div class="card">
       <div class="mlist">
-        <div class="mi"><span class="k">BSC</span><span class="v">07:00–07:19 UTC。USDT Transfer、Multicall3、Safe 1.4.1，按 bsc_use.md 的方法、频率和 2026-04-01 起的归档要求。</span></div>
-        <div class="mi"><span class="k">Polygon</span><span class="v">08:17–08:40 UTC。两个交易所的 OrderFilled、ConditionalTokens 的 ERC-1155 持仓转移、抵押代币和 USDC.e 余额。</span></div>
-        <div class="mi"><span class="k">Ethereum</span><span class="v">08:50–09:11 UTC。和 BSC 同一套用法：USDT Transfer、Multicall3、Safe 1.4.1。</span></div>
+        <div class="mi"><span class="k">BSC</span><span class="v">10-29 07:00–07:19 UTC。USDT Transfer、Multicall3、Safe 1.4.1，按 bsc_use.md 的方法、频率和 2026-04-01 起的归档要求。</span></div>
+        <div class="mi"><span class="k">Polygon</span><span class="v">10-29 08:17–08:40 UTC。两个交易所的 OrderFilled、ConditionalTokens 的 ERC-1155 持仓转移、抵押代币和 USDC.e 余额。</span></div>
+        <div class="mi"><span class="k">Ethereum</span><span class="v">10-29 08:50–09:11 UTC。和 BSC 同一套用法：USDT Transfer、Multicall3、Safe 1.4.1。</span></div>
+        <div class="mi"><span class="k">Monad</span><span class="v">10-29 10:07–10:47 UTC 按 bsc_use.md 跑三轮（USDC Transfer、Multicall3、Safe 1.4.1）。10-30 03:13–03:24 UTC 按 Polymarket 的用法跑一轮；Monad 上没有 Polymarket，按调用形态选了替代合约，见 06 节。</span></div>
         <div class="mi"><span class="k">场景</span><span class="v">常规方法；最新状态 eth_call；实时 getLogs（40～2,000 块，全量和窄过滤）；归档（多个历史高度，每个高度重复 6～8 次）；2,000～50,000 块的大区间 getLogs；10～100 条的 batch；每秒约 1.5 次的常态流量；6 线程读 3,000 个余额的突发。</span></div>
         <div class="mi"><span class="k">测法注意</span><span class="v">路由器会缓存同参数请求，所以 batch 和突发都用随机不重复地址。连续失败会触发整链熔断，所以突发放在每轮最后，下一轮前冷却 3～5 分钟。下文引用的错误都是原文。</span></div>
       </div>
@@ -205,12 +208,12 @@
 
   <section>
     <div class="sechead"><h2>02 · 历史块高 eth_call 成功率</h2></div>
-    <p class="secsub">以太坊和 Polygon 的历史查询只是零星失败，重试即可。BSC 的失败成片出现，同一高度连续 8 次全部失败，重试也救不回来。</p>
+    <p class="secsub">以太坊和 Polygon 的历史查询只是零星失败，重试即可。BSC 和 Monad 的失败成片出现，同一高度连续 8 次全部失败，重试也救不回来。Monad 换随机地址、换相邻块高也一样失败，是上游缺这段历史状态。</p>
     <div class="card chart">
-      <p class="ttl">BSC 在 2026-08-09 的高度跌到 0%，以太坊各月不低于 75%</p>
-      <p class="cap">每个点为同一历史高度连续请求 8 次（Polygon 6 次）的成功比例，悬停看详情。</p>
-      <svg id="archchart" viewBox="0 0 980 330" role="img" aria-label="历史块高 eth_call 成功率：BSC 在 2026-08-09 跌到 0%，以太坊各月不低于 75%"></svg>
-      <div class="src">来源：results_bsc_use2_*、results_polygon_polymarket_*、results_eth_use2_*（2026-10-29）</div>
+      <p class="ttl">BSC 有 1 个、Monad 有 3 个高度跌到 0%，以太坊各月不低于 75%</p>
+      <p class="cap">每个点为同一历史高度连续请求 8 次（Polygon 6 次）的成功比例，悬停看详情。成功的结果会被缓存，所以一旦成功，后面几次通常也成功。</p>
+      <svg id="archchart" viewBox="0 0 980 330" role="img" aria-label="历史块高 eth_call 成功率：BSC 有 1 个、Monad 有 3 个高度跌到 0%，以太坊各月不低于 75%"></svg>
+      <div class="src">来源：results_bsc_use2_*、results_polygon_polymarket_*、results_eth_use2_*、results_monad_use2_*（2026-10-29）</div>
     </div>
   </section>
 
@@ -312,45 +315,85 @@
   </section>
 
   <section>
-    <div class="sechead"><h2>06 · 路由器层面的共性问题</h2></div>
-    <p class="secsub">三条链的问题大多出在路由器层面，而不是哪一条链本身。熔断最容易被并发 batch 触发：三条链上 6 线程并发发 batch，几秒内整条链就开始返回 exhausted，持续几分钟。</p>
+    <div class="sechead"><h2>06 · Monad（chainId 143）</h2></div>
+    <p class="secsub"><b>Monad 不能满足 bsc_use.md 的归档要求；Polymarket 式的实时索引带重试可以用。</b>最新状态全部成功，问题出在历史状态时有时无、getLogs 的范围上限小而且不稳定。两套用法都测了：10-29 按 bsc_use.md 跑三轮，10-30 按 Polymarket 的用法跑一轮。</p>
+    <p class="secsub">Monad 上没有 Polymarket：Polymarket 的交易所和 ConditionalTokens 在 Monad 上都没有代码，最近约 6,000 块也没有任何 ERC-1155 转账。下表是按调用形态从 Monad 链上日志里选的替代合约（10-30），只代表请求的形态，日志量比 Polygon 小得多。</p>
     <div class="tablewrap">
       <table>
-        <thead><tr><th>问题</th><th>错误原文举例</th><th>BSC</th><th>Polygon</th><th>Ethereum</th></tr></thead>
+        <thead><tr><th>Polymarket 的用途</th><th>Monad 上的替代合约</th><th>关注的事件</th><th>130 块内条数</th></tr></thead>
         <tbody>
-          <tr><td class="k">非归档或受限上游混入</td><td><span class="err">public endpoint only serves recent blocks (last 1024) · Archive requests require a personal token</span></td><td><span class="badge fail">有，影响最大</span></td><td><span class="badge part">有</span></td><td><span class="badge part">有</span></td></tr>
-          <tr><td class="k">上游特有错误直接透传</td><td><span class="err">rpc method is not whitelisted · method is not available on the public endpoint · up to a 10 block range · invalid params</span></td><td><span class="badge part">有</span></td><td><span class="badge part">有</span></td><td><span class="badge part">有，eth_call 约 5%</span></td></tr>
-          <tr><td class="k">getLogs 上限各家不同</td><td><span class="err">exceed maximum block range 5000 · max=10000 · query exceeds max results 20000</span></td><td>5,000 块、20,000 条</td><td>10,000 块、20,000 条</td><td>5,000 块、20,000 条</td></tr>
-          <tr><td class="k">连续失败后整条链熔断</td><td><span class="err">rpcrouter: all upstream endpoints exhausted</span></td><td><span class="badge fail">有</span></td><td><span class="badge fail">有</span></td><td><span class="badge fail">有</span></td></tr>
-          <tr><td class="k">batch 实际上限低于 100 条</td><td><span class="err">batch exceeds limit of 100</span></td><td>约 40 条</td><td>约 40 条</td><td>eth_call 约 60 条</td></tr>
-          <tr><td class="k">路由器的最新块比上游新</td><td><span class="err">block range extends beyond current head block</span></td><td><span class="badge part">有</span></td><td><span class="badge ok">未见</span></td><td><span class="badge part">有</span></td></tr>
-          <tr><td class="k">缓存 null 响应</td><td><span class="err">无报错，直接返回 null</span></td><td><span class="badge fail">有</span></td><td><span class="badge ok">未见</span></td><td><span class="badge ok">未见</span></td></tr>
+          <tr><td class="k">两个交易所</td><td class="mono">0x34b6552d57a35a1d042ccae1951bd1c370112a6f<br>0x98dc6e90d4c2f212ed9d124ad2afba4833268633</td><td>各自最多的一种事件（代理合约，源码未公开）</td><td>合计约 2,400（Polygon 约 7,700）</td></tr>
+          <tr><td class="k">持仓（ERC-1155）</td><td class="mono">0x2ab50b521ca45452602877dede5d0d244a0e5c41</td><td>TransferSingle / TransferBatch，约半年前活跃</td><td>0</td></tr>
+          <tr><td class="k">抵押代币</td><td class="mono">0x754704bc059f8c67012fed69bc8a327a5aafb603</td><td>USDC Transfer</td><td>约 130</td></tr>
+          <tr><td class="k">USDC.e（第二种代币）</td><td class="mono">0x3bd359c1119da7da1d913d1c4d2b7c461115433a</td><td>WMON Transfer</td><td>约 14</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <p class="cardh good">能满足的部分</p>
+      <ul class="lst">
+        <li>常规方法和最新状态 eth_call 全部成功：USDC balanceOf、Multicall3 一次 100 个、Safe getThreshold / getOwners、ERC-1155 balanceOf 和 balanceOfBatch 一次 50 组。</li>
+        <li>10-29 的实时 USDC 全量扫描 130 / 500 块 6/6，窄过滤（只看转入大户的 USDC）130 / 500 块 4/4。</li>
+        <li>500 块的成交事件扫描一次约 9,000 条，没有碰到其他三条链的 20,000 条结果上限，p50 约 2.6 s。</li>
+        <li>每秒约 1.5 次的常态流量下 eth_call 和区块查询全部成功。10-30 用 6 线程并发单条 eth_call，300/300，约 43 次/秒。</li>
+        <li>Multicall3 读 3,000 个余额 30/30，约 2,000 个/秒。</li>
+      </ul>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>不能满足或要改写法的部分</th><th>实测</th><th>写法</th></tr></thead>
+        <tbody>
+          <tr><td class="k">历史状态时有时无</td><td>10-29 按月回溯 10 个高度，2026-04-21、07-04、08-06 三个高度的 eth_call / getBalance 连续 8 次全部失败，换随机地址、换相邻块高也一样：“Block requested not found… historical state that is not available”。10-30 另一批高度第一次常失败，重试 1～4 次后成功并被缓存</td><td>补数和对账另配归档节点，其他历史请求带重试</td></tr>
+          <tr><td class="k">getLogs 间歇只允许约 100 块</td><td>10-30 测试期间 130 块窗口 28/39、500 块 71/104，失败都是“block range too large”，40 / 100 块全部成功。测完后的 15 分钟内复测 64 次，全部成功</td><td>窗口 ≤100 块，或遇到这个错误就重试</td></tr>
+          <tr><td class="k">getLogs 范围上限约 1,000 块</td><td>10-29 时 1,001 块 6/6、1,100 块 0/6。10-30 时 1,000 块只有 3/8，2,000 块以上基本失败。另一类上游报“Log response size exceeded”：超过 1,000 块时结果须在 1 万条以内</td><td>回溯按 ≤1,000 块分段，报范围过大就拆小重试</td></tr>
+          <tr><td class="k">老区块的 null 被缓存</td><td>10-30 抽查 4 个老高度，3 个用某一种参数形式查 6 次都是 null，换 full 参数有时能取到。head-500 万的块两种参数都是 null，测完再查仍是 null。10-29 没有出现</td><td>历史 null 不要当真，换参数重查</td></tr>
+          <tr><td class="k">batch</td><td>串行、不重复地址：10-29 每批 20 条正常、30 条被拒；10-30 每批 40 条正常、50 条被拒。6 线程并发 20 条一批，10-29 150 批 0 成功，10-30 只成功 3 批</td><td>读余额用 Multicall3，batch 不要并发</td></tr>
+          <tr><td class="k">单条并发不稳定</td><td>10-29 冷却后 4 线程 120/120、6 线程 96/120。10-30 6 线程 300/300</td><td>并发不超过 4 线程，带重试</td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
   <section>
-    <div class="sechead"><h2>07 · 建议</h2></div>
-    <p class="secsub">实时监控可以接这个路由器，前提是程序按下面七点改。<b>BSC 的补数和按块高对账在路由器修复前不要依赖它。</b></p>
+    <div class="sechead"><h2>07 · 路由器层面的共性问题</h2></div>
+    <p class="secsub">四条链的问题大多出在路由器层面，而不是哪一条链本身。熔断最容易被并发 batch 触发：四条链上 6 线程并发发 batch，几秒内整条链就开始返回 exhausted，持续几分钟。</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>问题</th><th>错误原文举例</th><th>BSC</th><th>Polygon</th><th>Ethereum</th><th>Monad</th></tr></thead>
+        <tbody>
+          <tr><td class="k">非归档或受限上游混入</td><td><span class="err">public endpoint only serves recent blocks (last 1024) · Archive requests require a personal token · Block requested not found… historical state that is not available</span></td><td><span class="badge fail">有，影响最大</span></td><td><span class="badge part">有</span></td><td><span class="badge part">有</span></td><td><span class="badge fail">有，历史状态缺失</span></td></tr>
+          <tr><td class="k">上游特有错误直接透传</td><td><span class="err">rpc method is not whitelisted · method is not available on the public endpoint · up to a 10 block range · invalid params · block range too large</span></td><td><span class="badge part">有</span></td><td><span class="badge part">有</span></td><td><span class="badge part">有，eth_call 约 5%</span></td><td><span class="badge part">有，getLogs 间歇约 3 成</span></td></tr>
+          <tr><td class="k">getLogs 上限各家不同</td><td><span class="err">exceed maximum block range 5000 · max=10000 · query exceeds max results 20000 · Log response size exceeded</span></td><td>5,000 块、20,000 条</td><td>10,000 块、20,000 条</td><td>5,000 块、20,000 条</td><td>约 1,000 块（间歇约 100 块）；超过 1,000 块时 1 万条</td></tr>
+          <tr><td class="k">连续失败后整条链熔断</td><td><span class="err">rpcrouter: all upstream endpoints exhausted</span></td><td><span class="badge fail">有</span></td><td><span class="badge fail">有</span></td><td><span class="badge fail">有</span></td><td><span class="badge fail">有</span></td></tr>
+          <tr><td class="k">batch 实际上限低于 100 条</td><td><span class="err">batch exceeds limit of 100</span></td><td>约 40 条</td><td>约 40 条</td><td>eth_call 约 60 条</td><td>20～40 条</td></tr>
+          <tr><td class="k">路由器的最新块比上游新</td><td><span class="err">block range extends beyond current head block</span></td><td><span class="badge part">有</span></td><td><span class="badge ok">未见</span></td><td><span class="badge part">有</span></td><td><span class="badge ok">未见</span></td></tr>
+          <tr><td class="k">缓存 null 响应</td><td><span class="err">无报错，直接返回 null</span></td><td><span class="badge fail">有</span></td><td><span class="badge ok">未见</span></td><td><span class="badge ok">未见</span></td><td><span class="badge fail">有（10-30）</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sechead"><h2>08 · 建议</h2></div>
+    <p class="secsub">实时监控可以接这个路由器，前提是程序按下面七点改。<b>BSC 和 Monad 的补数和按块高对账在路由器修复前不要依赖它。</b></p>
     <div class="two">
       <div class="card">
         <p class="cardh warn">我方程序要改的地方</p>
         <ol class="lst">
-          <li><b>所有请求带重试。</b>遇到上游特有的错误重试 2～3 次，间隔 0.5～1 秒。遇到“all upstream endpoints exhausted”先退避 1～5 分钟，立刻重发只会延长熔断。</li>
-          <li><b>getLogs 窗口按结果条数定。</b>按当前流量，BSC 和以太坊的 USDT 全量扫描每次不超过 100～150 块，Polygon 全市场扫描不超过 130 块。能加地址或 topic 过滤的尽量加。</li>
-          <li><b>回溯分段。</b>BSC 和以太坊每段不超过 5,000 块，Polygon 不超过 10,000 块。收到“retry with the range …”时按提示拆分。</li>
+          <li><b>所有请求带重试。</b>遇到上游特有的错误（包括 Monad 的“block range too large”）重试 2～3 次，间隔 0.5～1 秒。遇到“all upstream endpoints exhausted”先退避 1～5 分钟，立刻重发只会延长熔断。</li>
+          <li><b>getLogs 窗口按结果条数定。</b>按当前流量，BSC 和以太坊的 USDT 全量扫描每次不超过 100～150 块，Polygon 全市场扫描不超过 130 块。Monad 日志量小，但窗口不超过 100 块才不会碰到间歇的范围限制。能加地址或 topic 过滤的尽量加。</li>
+          <li><b>回溯分段。</b>BSC 和以太坊每段不超过 5,000 块，Polygon 不超过 10,000 块，Monad 不超过 1,000 块。收到“retry with the range …”时按提示拆分。</li>
           <li><b>终点块用最新块减 1。</b></li>
-          <li><b>批量读余额改用 Multicall3 aggregate3</b>，一次 eth_call 读 100 个。保留 JSON-RPC batch 的话，每批不超过 40 条并且串行发送。</li>
-          <li><b>BSC 上的历史 null 不要当真</b>，换参数重查或改走其他节点。</li>
-          <li><b>BSC 的历史数据另配付费归档节点</b>，用于补数和日报对账。</li>
+          <li><b>批量读余额改用 Multicall3 aggregate3</b>，一次 eth_call 读 100 个。保留 JSON-RPC batch 的话，每批不超过 40 条（Monad 20 条）并且串行发送。</li>
+          <li><b>BSC 和 Monad 上的历史 null 不要当真</b>，换参数重查或改走其他节点。</li>
+          <li><b>BSC 和 Monad 的历史数据另配付费归档节点</b>，用于补数和日报对账。</li>
         </ol>
       </div>
       <div class="card">
         <p class="cardh bad">需要路由器方修复的事项</p>
         <ul class="checks">
-          <li>离最新块超过 1,024 块的请求只路由到归档上游。</li>
-          <li>上游特有的错误在路由器内换上游重试，不透传给客户端，包括 not whitelisted、not available、10 block range、Archive requests require a personal token、invalid params。</li>
+          <li>离最新块超过 1,024 块的请求只路由到归档上游，并确认上游真有这段历史状态（Monad）。</li>
+          <li>上游特有的错误在路由器内换上游重试，不透传给客户端，包括 not whitelisted、not available、10 block range、block range too large、Archive requests require a personal token、invalid params。</li>
           <li>不缓存 null 响应，至少对指定块高的 getBlockByNumber 和 getTransactionReceipt 不缓存。</li>
           <li>公布并统一 getLogs 的范围上限、结果上限和 batch 的实际上限。</li>
           <li>单个请求被上游拒绝时不要触发整条链的熔断。</li>
@@ -361,16 +404,22 @@
   </section>
 
   <section>
-    <div class="sechead"><h2>08 · 附录：脚本与原始数据</h2></div>
+    <div class="sechead"><h2>09 · 附录：脚本与原始数据</h2></div>
     <p class="secsub">脚本在仓库 <a href="https://github.com/zhaoxiangjunupi/protocolTest">zhaoxiangjunupi/protocolTest</a> 的 main 分支，只用 Python 标准库。结果文件按仓库约定不提交，存放在测试机的项目目录里。</p>
 <pre>python3 bsc_use_check.py --chain 56                   # BSC 第一轮：全部场景
 python3 bsc_use_check.py --chain 56 --followup        # BSC 第二轮：深度归档、batch 上限、窄过滤日志
 python3 bsc_use_check.py --chain 1                    # 以太坊第一轮
-python3 polygon_polymarket_check.py                   # Polygon / Polymarket</pre>
+python3 bsc_use_check.py --chain 143                  # Monad 第一轮（bsc_use.md 的用法）
+python3 polygon_polymarket_check.py                   # Polygon / Polymarket
+python3 polygon_polymarket_check.py --chain 143       # Monad，按 Polymarket 的用法</pre>
     <div class="tablewrap">
       <table>
         <thead><tr><th>结果文件</th><th>链</th><th>内容</th></tr></thead>
         <tbody>
+          <tr><td class="mono">results_monad_polymarket_20261030T031313Z.json</td><td>Monad</td><td>按 Polymarket 的用法跑全部场景</td></tr>
+          <tr><td class="mono">results_monad_use3_20261029T104712Z.json</td><td>Monad</td><td>历史状态失败的成因、冷却后的 batch 上限、单条并发、getLogs 范围上限</td></tr>
+          <tr><td class="mono">results_monad_use2_20261029T102548Z.json</td><td>Monad</td><td>按月回溯的归档、窄过滤日志、getLogs 范围上限、null 缓存、batch 上限、突发</td></tr>
+          <tr><td class="mono">results_monad_use_20261029T100733Z.json</td><td>Monad</td><td>第一轮全部场景（bsc_use.md 的用法）</td></tr>
           <tr><td class="mono">results_eth_use2_20261029T091111Z.json</td><td>Ethereum</td><td>按月回溯的归档、窄过滤日志、null 缓存、batch 上限、突发</td></tr>
           <tr><td class="mono">results_eth_use_20261029T085027Z.json</td><td>Ethereum</td><td>第一轮全部场景</td></tr>
           <tr><td class="mono">results_polygon_polymarket2_20261029T083958Z.json</td><td>Polygon</td><td>窄过滤大区间、invalid params 成因、实时可靠性、并发 batch</td></tr>
@@ -383,7 +432,7 @@ python3 polygon_polymarket_check.py                   # Polygon / Polymarket</pr
     </div>
   </section>
 
-  <footer><span>rpc-router-bench · 业务适配测试</span><span>2026-10-29</span></footer>
+  <footer><span>rpc-router-bench · 业务适配测试</span><span>2026-10-29～10-30</span></footer>
 </div>
 <div id="tip"></div>
 
@@ -404,6 +453,16 @@ const ARCH = [
   {chain:'Polygon',  date:'2026-08-03', block:91370984, ok:6, n:6},
   {chain:'Polygon',  date:'2026-10-11', block:95370984, ok:4, n:6},
   {chain:'Polygon',  date:'2026-10-27', block:96270984, ok:6, n:6},
+  {chain:'Monad',    date:'2025-11-24', block:37586224, ok:8, n:8},
+  {chain:'Monad',    date:'2025-12-31', block:45586224, ok:5, n:8},
+  {chain:'Monad',    date:'2026-02-06', block:53586224, ok:8, n:8},
+  {chain:'Monad',    date:'2026-03-15', block:61586224, ok:8, n:8},
+  {chain:'Monad',    date:'2026-04-21', block:69586224, ok:0, n:8},
+  {chain:'Monad',    date:'2026-05-28', block:77586224, ok:8, n:8},
+  {chain:'Monad',    date:'2026-07-04', block:85586224, ok:0, n:8},
+  {chain:'Monad',    date:'2026-08-06', block:93586224, ok:0, n:8},
+  {chain:'Monad',    date:'2026-09-03', block:101586224, ok:3, n:8},
+  {chain:'Monad',    date:'2026-10-01', block:109586224, ok:8, n:8},
   {chain:'BSC',      date:'2026-04-01', block:90000000, ok:8, n:8},
   {chain:'BSC',      date:'2026-04-27', block:95000000, ok:7, n:8},
   {chain:'BSC',      date:'2026-05-05', block:96500000, ok:5, n:8},
@@ -421,6 +480,7 @@ const STYLE = {
   BSC:      {stroke:'var(--accent)',        width:2.5, dash:'',    label:'var(--accent)'},
   Ethereum: {stroke:'var(--series-grey)',   width:1.75, dash:'',   label:'var(--fg-2)'},
   Polygon:  {stroke:'var(--series-grey-2)', width:1.75, dash:'5 4', label:'var(--fg-2)'},
+  Monad:    {stroke:'var(--series-2)',      width:2.5, dash:'',    label:'var(--fg)'},
 };
 
 (function drawArchive(){
@@ -464,9 +524,9 @@ const STYLE = {
     el('text', {x: xv(v), y: B + 22, 'text-anchor': 'middle', 'font-size': 12, fill: 'var(--muted)'}, null,
        `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
   }
-  // requirement start
-  el('line', {x1: x(REQ_START), x2: x(REQ_START), y1: T - 4, y2: B, stroke: 'var(--muted)', 'stroke-dasharray': '3 3'});
-  el('text', {x: x(REQ_START) + 6, y: B - 8, 'font-size': 12, fill: 'var(--fg-2)'}, null, `需求起点 ${REQ_START}`);
+  // requirement start, labelled at the top: Monad's drop to its 2026-04-21 point crosses the bottom
+  el('line', {x1: x(REQ_START), x2: x(REQ_START), y1: T - 16, y2: B, stroke: 'var(--muted)', 'stroke-dasharray': '3 3'});
+  el('text', {x: x(REQ_START) + 6, y: T - 8, 'font-size': 12, fill: 'var(--fg-2)'}, null, `需求起点 ${REQ_START}`);
   // Ethereum worst month as a reference line
   const em = low('Ethereum'), ep = em.ok / em.n;
   el('line', {x1: L, x2: R, y1: y(ep), y2: y(ep), stroke: 'var(--muted)', 'stroke-dasharray': '2 4'});
@@ -481,13 +541,13 @@ const STYLE = {
   };
   const hide = () => { tip.style.opacity = 0; };
 
-  // series, BSC drawn last so it sits on top
+  // series, Monad then BSC drawn last so they sit on top; the surface ring separates overlapping points
   names.forEach(s => {
     const st = STYLE[s], rows = series(s), g = el('g', {});
     el('path', {d: rows.map((r, i) => `${i ? 'L' : 'M'}${x(r.date)},${y(r.ok / r.n)}`).join(' '),
                 fill: 'none', stroke: st.stroke, 'stroke-width': st.width, 'stroke-dasharray': st.dash}, g);
     rows.forEach(r => {
-      const c = el('circle', {cx: x(r.date), cy: y(r.ok / r.n), r: 4.5, fill: st.stroke, tabindex: 0}, g);
+      const c = el('circle', {cx: x(r.date), cy: y(r.ok / r.n), r: 4.5, fill: st.stroke, stroke: 'var(--surface)', 'stroke-width': 2, tabindex: 0}, g);
       c.style.cursor = 'help';
       c.addEventListener('mousemove', ev => show(ev, r));
       c.addEventListener('mouseleave', hide);
@@ -503,6 +563,10 @@ const STYLE = {
                 'text-anchor': left ? 'end' : 'start',
                 'font-weight': s === 'BSC' ? 700 : 400, fill: STYLE[s].label}, null, `${s} ${r.ok}/${r.n}`);
   });
+  // Monad has three 0/8 heights: one label over the flat stretch between the 07-04 and 08-06 points
+  // (its 04-21 point sits under the requirement-start label)
+  el('text', {x: (x('2026-07-04') + x('2026-08-06')) / 2, y: y(0) - 8, 'font-size': 12, 'text-anchor': 'middle',
+              'font-weight': 700, fill: STYLE.Monad.label}, null, 'Monad 0/8');
 })();
 </script>
 </body>
