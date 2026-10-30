@@ -58,6 +58,14 @@ CHAIN_PROFILES = {
         "holder": "0x28C6c06298d514Db089934071355E5743bf21d60",          # Binance 14
         "apr_lo": lambda h: h - 3_000_000,                               # ~14 months at 12 s
         "deep_heights": lambda h: [h - k * 216_000 for k in (12, 9, 8, 7, 6, 5, 4, 3, 2, 1)]},   # ~monthly back
+    143: {"name": "Monad", "slug": "monad", "chain_hex": "0x8f",
+          "token": "0x754704bc059f8c67012fed69bc8a327a5aafb603",        # USDC (Circle), the busiest stablecoin
+          "holder": "0x188d586ddcf52439676ca21a244753fa19f9ea8e",       # contract holding ~12.4M USDC, frequent recipient
+          # getLogs is capped at ~1,000 blocks here, so the 20k-block ProxyCreation search would only fail
+          # (and repeated failures trip the router's per-chain breaker): use a Safe found by a chunked scan
+          "safe": "0x478467577bb88b3827ece4d2cc51cc25b066ecfb",         # Safe 1.4.1, 2-of-2
+          "apr_lo": lambda h: h - 80_000_000,                           # ~0.3-0.4 s blocks
+          "deep_heights": lambda h: [h - k * 8_000_000 for k in (10, 9, 8, 7, 6, 5, 4, 3, 2, 1)]},  # ~monthly back
 }
 
 
@@ -158,7 +166,9 @@ def find_block_at(ts_target, lo, hi):
     probes = 0
     while hi - lo > 2:
         mid = (lo + hi) // 2
-        r = block(mid, tries=5)
+        r = block(mid, tries=3)
+        if not r["ok"]:   # some routers cache a null per (height, full) key: the other form may still answer
+            r = block(mid, full=True, tries=2)
         probes += 1
         rec("archive_probe_getBlockByNumber", r, {"block": mid})
         if not r["ok"]:
@@ -222,8 +232,8 @@ def scen_call(addrs):
 
     # a real Safe: take a ProxyCreation event from the last 20k blocks (also a getLogs test)
     h = head()
-    safe = None
-    for factory in (SAFE_FACTORY_141, SAFE_FACTORY_130):
+    safe = PROFILE.get("safe")
+    for factory in () if safe else (SAFE_FACTORY_141, SAFE_FACTORY_130):
         r = retry({"method": "eth_getLogs", "params": [{"fromBlock": hx(h - 20000), "toBlock": hx(h),
                                                         "address": factory, "topics": [TOPIC_PROXY_CREATION]}]}, timeout=30)
         rec("call/find_safe_getLogs_20k", r, {"factory": factory, "n_logs": len(r["result"]) if r["ok"] else None})
@@ -235,7 +245,7 @@ def scen_call(addrs):
             else:
                 safe = "0x" + lg["data"][2:][24:64]
             break
-    log("  Safe found via ProxyCreation logs: %s" % safe)
+    log("  Safe %s: %s" % ("from chain profile" if PROFILE.get("safe") else "found via ProxyCreation logs", safe))
     target = safe or SAFE_SINGLETON_L2_130
     for name, sel in (("getThreshold", SEL_GET_THRESHOLD), ("getOwners", SEL_GET_OWNERS)):
         for _ in range(5):

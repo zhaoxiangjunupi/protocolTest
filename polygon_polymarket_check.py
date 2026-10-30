@@ -14,6 +14,9 @@ Workload (mirrors bsc_use.md, with Polymarket's contracts):
 
 Contract addresses and topics were taken from live receipts on 2026-10-29 (Polymarket
 moved to new exchange contracts; the old 0x4bFb… / 0xC5d5… exchanges emit nothing now).
+
+--chain 143 runs the same workload on Monad, where Polymarket is not deployed: each role goes to
+a Monad contract with the same call shape (see CHAIN_PROFILES).
 """
 import argparse
 import json
@@ -41,6 +44,48 @@ TOPIC_TRANSFER = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523
 SEL_BALANCE_OF = "0x70a08231"
 SEL_BALANCE_OF_1155 = "0x00fdd58e"      # balanceOf(address,uint256)
 SEL_BALANCE_OF_BATCH = "0x4e1273f4"     # balanceOfBatch(address[],uint256[])
+NAME = "Polygon"
+
+# Per-chain roles. The Polymarket-era names stay: on another chain they mean "two busy contracts and
+# their fill-like event", "an ERC-1155 position token", "the collateral" and "a second token".
+CHAIN_PROFILES = {
+    137: {"name": "Polygon", "slug": "polygon", "chain_hex": "0x89",
+          "exchanges": (EXCHANGE, NEG_RISK_EXCHANGE), "order_filled": TOPIC_ORDER_FILLED,
+          "ctf": CONDITIONAL_TOKENS, "token_id": None, "collateral": COLLATERAL, "usdce": USDCE,
+          "extra_heights": (), "big_spans": (2_000, 5_000, 10_000, 20_000, 50_000),
+          "hist_addr": NEG_RISK_ADAPTER, "hist_label": "head-10M NegRiskAdapter", "hist_start": lambda h: h - 10_000_000,
+          "hist_spans": (5_000, 50_000), "burst_batch": 40},
+    # Roles picked from Monad's own logs on 2026-10-30: no Polymarket contract has code here and no
+    # ERC-1155 transfer happened in the last ~6,000 blocks
+    143: {"name": "Monad", "slug": "monad", "chain_hex": "0x8f",
+          "exchanges": ("0x34b6552d57a35a1d042ccae1951bd1c370112a6f",   # unverified proxy, the biggest log emitter
+                        "0x98dc6e90d4c2f212ed9d124ad2afba4833268633"),  # another busy proxy
+          # their main events OR-ed: ~15 logs per block together (OrderFilled on Polygon: ~60)
+          "order_filled": ["0xb585865280072cb0f2cb5cf0f49f0e0224c09fa012c92c5f33eabf10287b8beb",
+                           "0xf36866d965ee70c8632ff558f5cf8d41ee9ca1d0d0bc7700786e57be60747390"],
+          "ctf": "0x2ab50b521ca45452602877dede5d0d244a0e5c41",          # ERC-1155 (KINETK), last active ~6 months ago
+          "token_id": "0x" + "0" * 64,                                  # the id it moved then
+          "collateral": "0x754704bc059f8c67012fed69bc8a327a5aafb603",   # USDC
+          "usdce": "0x3bd359c1119da7da1d913d1c4d2b7c461115433a",        # WMON
+          "extra_heights": (("head-60M", 60_000_000), ("head-80M", 80_000_000)),   # ~0.4 s blocks: back to 2025-11
+          "big_spans": (500, 1_000, 2_000, 5_000, 10_000),              # getLogs is capped near 1,000 blocks
+          "hist_addr": "0x2ab50b521ca45452602877dede5d0d244a0e5c41", "hist_label": "~head-40M ERC-1155",
+          "hist_start": lambda h: 77_787_000,                           # its TransferSingle logs at 77,787,315
+          "hist_spans": (100, 500, 1_000, 5_000), "burst_batch": 20},   # batches over 20 calls fail here
+}
+
+
+def use_chain(chain_id):
+    """Point the module-level constants at another chain profile."""
+    global CHAIN, NAME, PROFILE, EXCHANGE, NEG_RISK_EXCHANGE, TOPIC_ORDER_FILLED, CONDITIONAL_TOKENS, COLLATERAL, USDCE, NEG_RISK_ADAPTER
+    PROFILE = CHAIN_PROFILES[chain_id]
+    CHAIN, NAME = chain_id, PROFILE["name"]
+    EXCHANGE, NEG_RISK_EXCHANGE = PROFILE["exchanges"]
+    TOPIC_ORDER_FILLED, CONDITIONAL_TOKENS = PROFILE["order_filled"], PROFILE["ctf"]
+    COLLATERAL, USDCE, NEG_RISK_ADAPTER = PROFILE["collateral"], PROFILE["usdce"], PROFILE["hist_addr"]
+
+
+PROFILE = CHAIN_PROFILES[137]
 CTX = {}
 
 
@@ -90,10 +135,16 @@ def scen_basic(h):
         CTX["holder"] = "0x" + lg["topics"][3][-40:]            # to (burns go to the zero address, skip those)
         CTX["token_id"] = "0x" + lg["data"][2:66]               # id (first word of data)
     else:
-        log("  could not fetch a recent TransferSingle: %s" % r["error"])
-        CTX.update({"tx": None, "holder": EXCHANGE, "token_id": "0x" + "0" * 64, "holders": [EXCHANGE]})
+        # no recent position transfers (none at all on Monad): take holders and a tx from the collateral
+        log("  no recent TransferSingle (%s): holders from collateral Transfer logs" % (r["error"] or "0 logs"))
+        r = get_logs(h - 30, h, COLLATERAL, [TOPIC_TRANSFER])
+        rs = r["result"] if r["ok"] else []
+        zero = "0x" + "0" * 40
+        holders = [a for a in dict.fromkeys("0x" + l["topics"][2][-40:] for l in rs if len(l["topics"]) == 3) if a != zero][:100]
+        CTX.update({"tx": rs[-1]["transactionHash"] if rs else None, "holder": holders[-1] if holders else EXCHANGE,
+                    "token_id": PROFILE["token_id"] or "0x" + "0" * 64, "holders": holders or [EXCHANGE]})
     specs = [
-        ("eth_chainId", {"method": "eth_chainId", "params": [], "expect": "0x89"}),
+        ("eth_chainId", {"method": "eth_chainId", "params": [], "expect": PROFILE["chain_hex"]}),
         ("eth_blockNumber", {"method": "eth_blockNumber", "params": []}),
         ("eth_getBlockByNumber_latest", {"method": "eth_getBlockByNumber", "params": ["latest", False], "nonnull": True}),
         ("eth_getBlockByNumber_latest_full", {"method": "eth_getBlockByNumber", "params": ["latest", True], "nonnull": True}),
@@ -165,6 +216,7 @@ def scen_archive(h, reps):
     heights = [("head-500", h - 500), ("head-1000", h - 1000), ("head-2000", h - 2000), ("head-10k", h - 10_000),
                ("head-100k", h - 100_000), ("head-1M", h - 1_000_000), ("head-5M", h - 5_000_000),
                ("head-10M", h - 10_000_000), ("head-20M", h - 20_000_000), ("head-40M", h - 40_000_000)]
+    heights += [(label, h - back) for label, back in PROFILE["extra_heights"]]
     CTX["heights"] = heights
     for label, n in heights:
         date = None
@@ -196,7 +248,7 @@ def scen_archive(h, reps):
 
 def scen_logs_big(h):
     log("== eth_getLogs big ranges ==")
-    for span in (2_000, 5_000, 10_000, 20_000, 50_000):
+    for span in PROFILE["big_spans"]:
         name = "logs_big/OrderFilled span=%d" % span
         for _ in range(3):
             r = get_logs(h - span, h - 1, [EXCHANGE, NEG_RISK_EXCHANGE], [TOPIC_ORDER_FILLED], timeout=90)
@@ -210,10 +262,10 @@ def scen_logs_big(h):
             rec(name, r, {"n_logs": n_logs(r)})
             time.sleep(0.5)
         show(name, "logs=%s" % [x["n_logs"] for x in RESULTS[name]])
-    # the same at a historical height (head-10M) : narrow filter, big span
-    n = h - 10_000_000
-    for span in (5_000, 50_000):
-        name = "logs_big/hist head-10M NegRiskAdapter span=%d" % span
+    # the same at a historical height (Polygon: head-10M) : narrow filter, big span
+    n = PROFILE["hist_start"](h)
+    for span in PROFILE["hist_spans"]:
+        name = "logs_big/hist %s span=%d" % (PROFILE["hist_label"], span)
         for _ in range(3):
             r = get_logs(n, n + span - 1, NEG_RISK_ADAPTER, None, timeout=90)
             rec(name, r, {"n_logs": n_logs(r)})
@@ -221,21 +273,23 @@ def scen_logs_big(h):
         show(name, "logs=%s" % [x["n_logs"] for x in RESULTS[name]])
 
 
-def scen_batch():
+def scen_batch(cool):
     log("== JSON-RPC batch (unique addresses, 1s gap, ascending size) ==")
     rng = random.Random(3)
-    for n in (10, 20, 40, 50, 100):
-        name = "batch/eth_getBalance x%d" % n
-        for _ in range(3):
-            rec(name, rpc_call(CHAIN, {"batch": [("eth_getBalance", [rand_addr(rng), "latest"]) for _ in range(n)]}, timeout=60))
-            time.sleep(1)
-        show(name)
-    for n in (10, 20, 40, 50, 100):
-        name = "batch/eth_call x%d" % n
-        for _ in range(3):
-            rec(name, rpc_call(CHAIN, {"batch": [("eth_call", [{"to": USDCE, "data": SEL_BALANCE_OF + pad_addr(rand_addr(rng))}, "latest"]) for _ in range(n)]}, timeout=60))
-            time.sleep(1)
-        show(name)
+    calls = (("eth_getBalance", lambda: ("eth_getBalance", [rand_addr(rng), "latest"])),
+             ("eth_call", lambda: ("eth_call", [{"to": USDCE, "data": SEL_BALANCE_OF + pad_addr(rand_addr(rng))}, "latest"])))
+    for method, one in calls:
+        for n in (10, 20, 40, 50, 100):
+            name = "batch/%s x%d" % (method, n)
+            for _ in range(3):
+                rec(name, rpc_call(CHAIN, {"batch": [one() for _ in range(n)]}, timeout=60))
+                time.sleep(1)
+            show(name)
+            # failing in a row trips the router's per-chain breaker, which would fail the next sizes too
+            if not summarize(name)["ok"]:
+                log("  stop growing %s at %d, cooling %ds" % (method, n, cool))
+                time.sleep(cool)
+                break
     h = head()
     spec = {"batch": [("eth_blockNumber", []), ("eth_getBlockByNumber", [hx(h), False]),
                       ("eth_getLogs", [{"fromBlock": hx(h - 129), "toBlock": hx(h), "address": [EXCHANGE, NEG_RISK_EXCHANGE], "topics": [TOPIC_ORDER_FILLED]}]),
@@ -284,7 +338,8 @@ def scen_null_cache(h):
 
 
 def scen_burst(threads):
-    log("== burst: 300 unique single eth_call + 3000 in batches of 40, %d threads ==" % threads)
+    size = PROFILE["burst_batch"]
+    log("== burst: 300 unique single eth_call + 3000 in batches of %d, %d threads ==" % (size, threads))
     rng = random.Random(9)
     single = [rand_addr(rng) for _ in range(300)]
     t0 = time.perf_counter()
@@ -295,13 +350,14 @@ def scen_burst(threads):
     show("burst/single eth_call", "%.0f req/s " % (300 / dt))
     time.sleep(3)
     addrs = [rand_addr(rng) for _ in range(3000)]
-    chunks = [addrs[i:i + 40] for i in range(0, 3000, 40)]
+    chunks = [addrs[i:i + size] for i in range(0, 3000, size)]
+    name = "burst/batch%d eth_call" % size
     t0 = time.perf_counter()
     with ThreadPoolExecutor(max_workers=threads) as ex:
         for r in ex.map(lambda c: rpc_call(CHAIN, {"batch": [("eth_call", [{"to": USDCE, "data": SEL_BALANCE_OF + pad_addr(a)}, "latest"]) for a in c]}, timeout=60), chunks):
-            rec("burst/batch40 eth_call", r)
+            rec(name, r)
     dt = time.perf_counter() - t0
-    show("burst/batch40 eth_call", "%.0f calls/s " % (3000 / dt))
+    show(name, "%.0f calls/s " % (3000 / dt))
 
 
 def main():
@@ -310,11 +366,15 @@ def main():
     ap.add_argument("--reps", type=int, default=6)
     ap.add_argument("--sustain-seconds", type=int, default=90)
     ap.add_argument("--threads", type=int, default=6)
-    ap.add_argument("--out", default="results_polygon_polymarket_%s.json" % datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    ap.add_argument("--cool", type=int, default=120, help="seconds to wait after a batch size fails")
+    ap.add_argument("--chain", type=int, default=137, choices=sorted(CHAIN_PROFILES))
+    ap.add_argument("--out", help="default results_<chain>_polymarket_<time>.json")
     a = ap.parse_args()
+    use_chain(a.chain)
+    a.out = a.out or "results_%s_polymarket_%s.json" % (PROFILE["slug"], datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
     want = set(a.scenarios.split(","))
     h = head()
-    log("Polygon head = %d (%s)" % (h, rpcutil.BASE))
+    log("%s head = %d (%s)" % (NAME, h, rpcutil.BASE))
     scen_basic(h)                                # always: fills CTX
     if "call" in want:
         scen_call()
@@ -327,7 +387,7 @@ def main():
     if "nullcache" in want:
         scen_null_cache(h)
     if "batch" in want:
-        scen_batch()
+        scen_batch(a.cool)
     if "sustain" in want:
         scen_sustain(a.sustain_seconds, 1.5)
     if "burst" in want:
